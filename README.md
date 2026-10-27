@@ -1,121 +1,160 @@
-# Nitro Compute
+<div align="center">
 
-Nitro Compute is a decentralized peer-to-peer serverless MapReduce engine built with Rust, `libp2p`, and `Wasmtime`. It compiles compute tasks into lightweight, sandboxed WebAssembly modules (`wasm32-wasi`) for low-latency distributed data processing across edge nodes.
+# NITRO COMPUTE
 
-Instead of transferring raw datasets to centralized cloud clusters or provisioning heavy container runtimes, Nitro Compute fragments input streams at the coordinator node, packages them alongside compiled `.wasm` kernels, and distributes workloads across an encrypted peer-to-peer mesh network.
+### Decentralized P2P Serverless MapReduce Engine at the Edge
+
+*Compile compute kernels into lightweight, sandboxed WebAssembly modules and orchestrate ultra-low latency big data workloads across an encrypted peer-to-peer mesh.*
+
+[![Rust](https://img.shields.io/badge/Rust-2021_Edition-000000?style=for-the-badge&logo=rust&logoColor=white)](https://www.rust-lang.org/)
+[![Wasmtime](https://img.shields.io/badge/Wasmtime-v22.0_Cranelift_JIT-654FF0?style=for-the-badge&logo=webassembly&logoColor=white)](https://wasmtime.dev/)
+[![libp2p](https://img.shields.io/badge/libp2p-v0.53_Kademlia_%2B_Gossipsub-F5A623?style=for-the-badge)](https://libp2p.io/)
+[![Tokio](https://img.shields.io/badge/Tokio-Async_Runtime-1E90FF?style=for-the-badge)](https://tokio.rs/)
+[![Target](https://img.shields.io/badge/Target-wasm32--wasi-239120?style=for-the-badge&logo=webassembly&logoColor=white)](https://wasi.dev/)
+
+---
+
+[**Architecture**](#end-to-end-execution-pipeline) •
+[**Security & Fuel Metering**](#zero-trust-sandbox--deterministic-fuel-metering) •
+[**P2P Protocol**](#decentralized-p2p-wire-protocol) •
+[**Workspace**](#workspace-architecture) •
+[**Quick Start**](#quick-start--deployment) •
+[**CLI Reference**](#cli-reference)
+
+</div>
+
+---
 
 ## Overview
 
-- **Sub-Millisecond Wasm Sandboxing**: Executes untrusted compute modules using the Wasmtime engine with the Cranelift compiler backend configured to `OptLevel::Speed` and WASI Preview 1 isolation.
-- **Deterministic Fuel Metering**: Prevents infinite loops and resource exhaustion on worker nodes by enforcing instruction-level fuel budgets (`config.consume_fuel(true)` and `store.add_fuel(fuel_limit)`), trapping any execution that exceeds its quota (`Trap::OutOfFuel`).
-- **Decentralized P2P Mesh Transport**: Uses `libp2p` over TCP with Noise cryptographic handshakes, Yamux stream multiplexing, Kademlia DHT peer routing, and signed Gossipsub broadcast channels.
-- **Bidirectional MapReduce Pipeline**: Dispatches workloads on the `"task-alloc"` Gossipsub channel and aggregates computed worker outputs returned on the `"task-results"` channel.
+**Nitro Compute** is a high-performance, decentralized serverless compute engine written in **Rust**. Instead of shipping massive datasets to centralized cloud clusters or spinning up heavy container images, Nitro Compute compiles stateless MapReduce functions into compact **`wasm32-wasi` WebAssembly bytecode** and streams them alongside fragmented data chunks across a **decentralized `libp2p` mesh network**.
 
-## Architecture
+Idle edge nodes (**Workers**) intercept task broadcasts, instantiate hardware-accelerated **Wasmtime (Cranelift)** sandboxes in sub-millisecond cold starts, enforce strict instruction-level **Fuel Metering** against infinite loops, and stream partial reductions back to the **Coordinator Oracle** over encrypted **Noise + Yamux** channels.
+
+### Why Nitro Compute?
+
+| Capability | Traditional Cloud MapReduce | Containerized Edge Workers | **Nitro Compute** |
+| :--- | :--- | :--- | :--- |
+| **Cold-Start Latency** | Seconds to Minutes (JVM / VM boot) | Hundreds of milliseconds | **< 1 ms (Wasmtime Cranelift JIT)** |
+| **Network Topology** | Centralized Master / Broker | Centralized API Gateway | **100% Decentralized P2P (`libp2p`)** |
+| **Discovery & Routing** | Static Cluster DNS | Central Registry | **Kademlia DHT + Gossipsub Mesh** |
+| **Untrusted Code Safety** | OS-level VM / Container | Namespace / cgroups | **Capability-based WASI + Linear Memory Isolation** |
+| **Anti-Infinite Loop Protection** | Wall-clock OS timeout | CPU cgroup throttling | **Deterministic WASM Instruction Fuel Metering (`Trap::OutOfFuel`)** |
+| **Payload Footprint** | 100 MB – 2 GB container image | 50 MB – 500 MB image | **~10 KB – 150 KB `.wasm` binary** |
+
+---
+
+## End-to-End Execution Pipeline
+
+### System Dataflow Blueprint
 
 ```text
-[ COMPUTER A: COORDINATOR ] <----------------------------------------+
-  |                                                                   |
-  +-- 1. Ingest Data Stream (Fragment large text stream into chunks)  | (Phase 6: Gossipsub)
-  +-- 2. Load jobs/word-count.wasm (Compiled Wasm bytecode)           | "task-results" channel
-  +-- 3. Pack Payload: TaskPayload { data_chunk, wasm, fuel_limit }   | carries ResultPayload
-  |                                                                   |
-  v  (Phase 5: Broadcast to "task-alloc" channel via Gossipsub)       |
-========================== DECENTRALIZED P2P NETWORK ==========================
-  |                                                                   |
-  +--> Multi-routing & Peer Discovery (Kademlia DHT)                  |
-  +--> Encrypted Transport (Noise Protocol + Yamux Multiplexing)      |
-  |                                                                   |
-===============================================================================
-  |
-  v  (Intercepted asynchronously by idle Worker nodes)
-[ COMPUTER B: WORKER NODE ] -----------------------------------------+
-  |
-  +-- 4. Intercept network frame & decode binary TaskPayload
-  +-- 5. Boot Sandbox: Instantiate Wasmtime instance (< 1ms)
-  +-- 6. Fuel Metering: Inject `store.add_fuel(fuel_limit)` into Store
-  |         +-- Within fuel budget -> Execute exported `map_line` via linear memory
-  |         +-- Infinite loop / Exceeded -> Trap::OutOfFuel aborts execution safely
-  |
-  +-- 7. Pack Result: Wrap computed integer into `ResultPayload`
+[ COMPUTER A: COORDINATOR ] ◄────────────────────────────────────────┐
+  │                                                                   │
+  ├── 1. Ingest Data Stream (File teks besar dipecah jadi chunk)      │ (Fase 6: Gossipsub)
+  ├── 2. Load jobs/word-count.wasm (Bytecode terkompilasi)            │ "task-results" channel
+  ├── 3. Pack Payload: TaskPayload { data_chunk, wasm, fuel_limit }   │ membawa ResultPayload
+  │                                                                   │
+  ▼  (Fase 5: Kirim ke "task-alloc" channel via libp2p Gossipsub)     │
+========================== JARINGAN DECENTRALIZED P2P ==========================
+  │                                                                   │
+  ├──► Multi-routing & Peer Discovery (Kademlia DHT)                  │
+  ├──► Transport Terenkripsi Aman (Noise Protocol + Yamux Multiplex)  │
+  │                                                                   │
+================================================================================
+  │
+  ▼  (Diterima Node Worker yang idle secara asinkronus)
+[ COMPUTER B: WORKER NODE ] ──────────────────────────────────────────┘
+  │
+  ├── 4. Intersept Jaringan & Decode TaskPayload biner
+  ├── 5. Booting Sandbox: Inisialisasi Instansi Wasmtime (< 1ms)
+  ├── 6. FUEL METERING: Suntik `store.add_fuel(fuel_limit)` ke Sandbox
+  │         ├── JIKA kode aman -> Eksekusi fungsi `map_line` via pointer memori
+  │         └── JIKA kena infinite-loop -> Trap aktif, eksekusi diputus paksa (Aman!)
+  │
+  └── 7. Pack Result: Bungkus hasil angka ke `ResultPayload`
 ```
 
-## Getting Started
+### Interactive Sequence Diagram
 
-### Prerequisites
+```mermaid
+sequenceDiagram
+    autonumber
+    participant FS as Input Data Stream
+    participant Coord as Coordinator Oracle
+    participant Mesh as libp2p Mesh (Kademlia + Gossipsub)
+    participant Worker as Edge Worker Daemon
+    participant Sandbox as Wasmtime Sandbox (Cranelift)
 
-- Rust 1.75+ (`rustc` and `cargo`, 2021 edition)
-- WebAssembly WASI target installed via `rustup`:
-
-```bash
-rustup target add wasm32-wasi
+    Coord->>FS: Stream & fragment file into line chunks
+    Coord->>Coord: Read compiled word_count.wasm binary
+    loop For each fragmented data_chunk
+        Coord->>Mesh: Publish TaskPayload { task_id, wasm_binary, data_chunk, fuel } to "task-alloc"
+        Mesh-->>Worker: Deliver Gossipsub frame over TCP + Noise + Yamux
+        Worker->>Sandbox: Instantiate WASI Preview 1 Store & add_fuel(fuel_limit)
+        Worker->>Sandbox: Allocate guest linear memory & inject data_chunk bytes
+        alt Within Fuel Budget
+            Sandbox-->>Worker: Exported map_line(ptr, len) returns word_count (usize)
+            Worker->>Mesh: Publish ResultPayload { task_id, worker_peer_id, computed_value } to "task-results"
+            Mesh-->>Coord: Deliver ResultPayload frame
+            Coord->>Coord: Deduplicate task_id & accumulate into unified sum
+        else Fuel Exhausted (Infinite Loop / DoS Attempt)
+            Sandbox--xWorker: Trap::OutOfFuel -> Security Resource Exhaustion Breach
+            Worker->>Worker: Abort guest instance safely without crashing daemon
+        end
+    end
 ```
 
-### Build
+---
 
-1. Compile the `word-count` WebAssembly guest job:
+## Zero-Trust Sandbox & Deterministic Fuel Metering
 
-```bash
-cargo build --manifest-path jobs/word-count/Cargo.toml --target wasm32-wasi --release
+Executing arbitrary user-supplied compute kernels on peer nodes requires strict isolation against both **memory corruption** and **algorithmic Denial-of-Service (infinite loops)**.
+
+Inside [`core/src/runtime.rs`](./core/src/runtime.rs), `NitroRuntime` enforces three layers of defense:
+
+1. **Cranelift High-Speed JIT Compilation**:
+   - Configured with `Strategy::Cranelift` and `OptLevel::Speed` to leverage hardware guard pages for near-native bounds-checked linear memory access.
+2. **Capability-Based WASI Sandboxing**:
+   - Each task invocation spawns a fresh, ephemeral `Store<WasiP1Ctx>` with no ambient filesystem or network socket access.
+   - Host-to-guest data transfer uses explicit guest heap allocation (`alloc` / `dealloc`) and bounds-checked `Memory::write` before invoking `map_line(ptr, len)`.
+3. **Deterministic Instruction Fuel Metering**:
+   - Enabled globally on the engine via `config.consume_fuel(true)` and provisioned per execution store via `store.add_fuel(fuel_limit)?`.
+   - Every Wasm instruction decrements the store's fuel counter. If untrusted bytecode enters an infinite loop or exceeds its budget, Wasmtime immediately raises `Trap::OutOfFuel`, which `NitroRuntime::classify_execution_error` intercepts and converts into a structured security breach error.
+
+```rust
+// core/src/runtime.rs
+let mut config = Config::new();
+config.strategy(Strategy::Cranelift);
+config.cranelift_opt_level(OptLevel::Speed);
+config.consume_fuel(true);
 ```
 
-2. Build the workspace binaries (`coordinator` and `worker`) in release mode:
+---
 
-```bash
-cargo build --release
-```
+## Decentralized P2P Wire Protocol
 
-### Usage
+The networking layer in [`core/src/network.rs`](./core/src/network.rs) combines **Kademlia DHT** (`kad::Behaviour<MemoryStore>`) and **Gossipsub** (`gossipsub::Behaviour`) inside `#[derive(NetworkBehavior)] pub struct NitroBehavior`.
 
-1. Start one or more worker daemons on local or remote nodes:
+### Transport Stack
+- **Transport**: Asynchronous TCP (`libp2p::tcp::tokio`)
+- **Encryption**: Cryptographically authenticated **Noise** handshakes (`libp2p::noise`)
+- **Multiplexing**: Concurrent stream multiplexing via **Yamux** (`libp2p::yamux`)
+- **Message Authenticity**: Cryptographically signed Gossipsub frames (`MessageAuthenticity::Signed(keypair)`) with strict validation (`ValidationMode::Strict`)
 
-```bash
-RUST_LOG=info cargo run --release --bin worker -- --listen /ip4/0.0.0.0/tcp/4001
-```
+### Pub/Sub Topics & Wire Payloads
 
-2. Run the coordinator oracle to fragment an input stream file, broadcast `.wasm` tasks to the mesh, and aggregate the returned counts:
-
-```bash
-RUST_LOG=info cargo run --release --bin coordinator -- \
-  --input input.txt \
-  --wasm target/wasm32-wasi/release/word_count.wasm \
-  --peer /ip4/127.0.0.1/tcp/4001 \
-  --chunk-lines 10 \
-  --fuel 10000000 \
-  --timeout 30
-```
-
-## Security and Isolation
-
-Worker nodes execute arbitrary WebAssembly bytecode received over the network. [`core/src/runtime.rs`](./core/src/runtime.rs) enforces strict isolation boundaries for every task invocation:
-
-1. **Memory Isolation**: Host input strings are written into guest linear memory using explicit guest heap allocation (`alloc` and `dealloc` exports in [`jobs/word-count/src/lib.rs`](./jobs/word-count/src/lib.rs)) and bounds-checked writes (`Memory::write`).
-2. **WASI Capability Control**: Each invocation creates an isolated `Store<WasiP1Ctx>` without host filesystem mounts or network socket descriptors.
-3. **Instruction Fuel Metering**: `NitroRuntime::new` enables `config.consume_fuel(true)`. Before invoking guest code, `NitroRuntime::execute_map` calls `store.add_fuel(fuel_limit)?`. If guest execution exhausts its allocated fuel, Wasmtime triggers `Trap::OutOfFuel`, which is intercepted and reported as a security resource exhaustion breach without terminating the worker process.
-
-## Network Protocol
-
-[`core/src/network.rs`](./core/src/network.rs) defines `NitroBehavior`, a composite `libp2p` `NetworkBehaviour` integrating Kademlia DHT (`kad::Behaviour<MemoryStore>`) and signed Gossipsub (`gossipsub::Behaviour`).
-
-### Gossipsub Channels and Wire Formats
-
-#### `"task-alloc"` (`TaskPayload`)
-
-Published by the coordinator node for each fragmented data chunk:
-
+#### 1. Topic `"task-alloc"` (`Coordinator ──► Workers`)
 ```json
 {
   "task_id": "task-0",
-  "wasm_binary": [0, 97, 115, 109, 1, 0, 0, 0],
+  "wasm_binary": [0, 97, 115, 109, 1, 0, 0, 0, "..."],
   "data_chunk": "distributed serverless mapreduce on webassembly edge nodes",
   "fuel": 10000000
 }
 ```
 
-#### `"task-results"` (`ResultPayload`)
-
-Published by worker nodes upon completing `NitroRuntime::execute_map`:
-
+#### 2. Topic `"task-results"` (`Workers ──► Coordinator`)
 ```json
 {
   "task_id": "task-0",
@@ -124,55 +163,126 @@ Published by worker nodes upon completing `NitroRuntime::execute_map`:
 }
 ```
 
-## CLI Reference
+---
 
-### `coordinator`
-
-| Option | Short | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--input <PATH>` | `-i` | `input.txt` | Path to the input text file to stream and fragment. |
-| `--wasm <PATH>` | `-w` | Auto-detected | Path to the compiled `.wasm` module binary. |
-| `--listen <MULTIADDR>` | `-l` | `/ip4/0.0.0.0/tcp/0` | Local TCP multiaddr for the coordinator swarm. |
-| `--peer <MULTIADDR>` | `-p` | None | Worker peer multiaddr to dial (repeatable). |
-| `--chunk-lines <N>` | `-c` | `1` | Number of non-empty lines grouped per `TaskPayload`. |
-| `--fuel <UNITS>` | `-f` | `10000000` | Wasmtime instruction fuel budget per task chunk. |
-| `--timeout <SECS>` | `-t` | `30` | Timeout in seconds to wait for worker `ResultPayload` responses. |
-
-### `worker`
-
-| Option | Short | Default | Description |
-| :--- | :--- | :--- | :--- |
-| `--listen <MULTIADDR>` | `-l` | `/ip4/0.0.0.0/tcp/0` | Local TCP multiaddr for the worker daemon. |
-| `--peer <MULTIADDR>` | `-p` | None | Bootstrap peer multiaddr to dial on startup (repeatable). |
-
-## Project Structure
+## Workspace Architecture
 
 ```text
 nitro-compute/
-├── Cargo.toml                  # Workspace manifest and shared dependency versions
-├── Cargo.lock                  # Locked dependency graph
-├── core/                       # Core runtime and P2P networking library
+├── Cargo.toml                  # Workspace manifest & shared dependency versions
+├── Cargo.lock                  # Reproducible dependency lockfile
+├── core/                       # Shared runtime & P2P networking library
 │   ├── Cargo.toml
 │   └── src/
-│       ├── lib.rs              # Public exports and tracing initialization
-│       ├── runtime.rs          # NitroRuntime (Wasmtime, WASI Preview 1, Fuel Metering)
-│       └── network.rs          # NitroBehavior (Kademlia, Gossipsub, Wire Payloads)
-├── coordinator/                # Coordinator CLI binary
+│       ├── lib.rs              # Public exports & unified tracing stdout subscriber
+│       ├── runtime.rs          # NitroRuntime: Wasmtime + WASI + Fuel Metering
+│       └── network.rs          # NitroBehavior: Kademlia + Gossipsub + Wire Payloads
+├── coordinator/                # Network entry oracle & MapReduce aggregator CLI
 │   ├── Cargo.toml
 │   └── src/
-│       └── main.rs             # Stream chunker, task dispatcher, and result aggregator
-├── worker/                     # Worker daemon binary
+│       └── main.rs             # Stream chunker, "task-alloc" publisher & "task-results" reducer
+├── worker/                     # Edge compute listener daemon
 │   ├── Cargo.toml
 │   └── src/
-│       └── main.rs             # Task listener, Wasm executor, and result publisher
+│       └── main.rs             # Intercepts tasks, runs Wasm sandbox & returns ResultPayloads
 └── jobs/
-    └── word-count/             # WebAssembly guest library (wasm32-wasi)
-        ├── .cargo/config.toml
-        ├── Cargo.toml
+    └── word-count/             # Sandboxed WebAssembly MapReduce guest module
+        ├── .cargo/config.toml  # Default build target: wasm32-wasi
+        ├── Cargo.toml          # crate-type = ["cdylib", "rlib"]
         └── src/
-            └── lib.rs          # Exported alloc, dealloc, and map_line functions
+            └── lib.rs          # #[no_mangle] exports: alloc, dealloc, map_line
 ```
+
+| Module | Crate Type | Key Responsibilities |
+| :--- | :--- | :--- |
+| **[`core`](./core)** | `lib` | Encapsulates `NitroRuntime` (`wasmtime` + `wasmtime-wasi`) and `NitroBehavior` (`libp2p`), wire schemas (`TaskPayload`, `ResultPayload`), and structured `tracing` telemetry. |
+| **[`coordinator`](./coordinator)** | `bin` | Streams input text files, fragments lines into chunks, loads compiled `.wasm` jobs, broadcasts `TaskPayload`s onto `"task-alloc"`, and aggregates `ResultPayload`s from `"task-results"`. |
+| **[`worker`](./worker)** | `bin` | Runs an asynchronous `libp2p` Swarm daemon, decodes incoming `TaskPayload`s, executes `"map_line"` inside fuel-metered Wasm sandboxes, and publishes `ResultPayload`s. |
+| **[`jobs/word-count`](./jobs/word-count)** | `cdylib`, `rlib` | Guest compute module compiled to `wasm32-wasi` that exposes linear memory management (`alloc`, `dealloc`) and word-counting (`map_line`). |
+
+---
+
+## Quick Start & Deployment
+
+### Prerequisites
+- **Rust Toolchain** (`rustc` & `cargo` 2021 edition)
+- **WASI Target**:
+  ```bash
+  rustup target add wasm32-wasi
+  ```
+
+### Step 1: Compile the WebAssembly MapReduce Job
+Compile `jobs/word-count` into a standalone `.wasm` binary:
+```bash
+cargo build --manifest-path jobs/word-count/Cargo.toml --target wasm32-wasi --release
+```
+
+### Step 2: Compile the Workspace Binaries (`coordinator` & `worker`)
+```bash
+cargo build --release
+```
+
+### Step 3: Start an Edge Worker Node (Terminal 1)
+Launch one or more worker daemons listening on a TCP multiaddr:
+```bash
+RUST_LOG=info cargo run --release --bin worker -- --listen /ip4/0.0.0.0/tcp/4001
+```
+**Sample Worker Output:**
+```text
+INFO core::runtime: Initialized NitroRuntime with Cranelift (OptLevel::Speed) and WASM fuel metering enabled
+INFO core::network: Initialized libp2p Swarm subscribed to bidirectional Gossipsub topics local_peer_id=12D3KooW... alloc_topic="task-alloc" results_topic="task-results"
+INFO core::network: Swarm listening on local multiaddr address=/ip4/127.0.0.1/tcp/4001
+INFO worker: Worker daemon ready and listening for MapReduce TaskPayloads
+```
+
+### Step 4: Dispatch a MapReduce Job from the Coordinator (Terminal 2)
+Create a sample dataset `input.txt` and run the Coordinator Oracle dialing the worker's multiaddr:
+```bash
+RUST_LOG=info cargo run --release --bin coordinator -- \
+  --input input.txt \
+  --wasm target/wasm32-wasi/release/word_count.wasm \
+  --peer /ip4/127.0.0.1/tcp/4001 \
+  --chunk-lines 5 \
+  --fuel 10000000 \
+  --timeout 30
+```
+**Sample Coordinator Output:**
+```text
+INFO coordinator: Starting nitro-compute coordinator oracle... fuel_limit=10000000
+INFO coordinator: Discovered compiled word-count Wasm binary path=target/wasm32-wasi/release/word_count.wasm
+INFO coordinator: Fragmented input text stream into MapReduce chunks total_chunks=4
+INFO coordinator: Broadcasted TaskPayload to Gossipsub mesh task_id="task-0" fuel=10000000 topic="task-alloc"
+INFO coordinator: Received worker ResultPayload and updated aggregate sum task_id="task-0" computed_value=42 unified_sum=42 remaining_tasks=3
+...
+INFO coordinator: All dispatched MapReduce tasks completed and aggregated unified_sum=184
+INFO coordinator: Final aggregated MapReduce word count sum: 184
+```
+
+---
+
+## CLI Reference
+
+### `coordinator` Flags
+
+| Flag | Short | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `--input <PATH>` | `-i` | `input.txt` | Path to the raw text stream file to fragment and process. |
+| `--wasm <PATH>` | `-w` | Auto-detected | Explicit path to the compiled `.wasm` MapReduce module. |
+| `--listen <MULTIADDR>` | `-l` | `/ip4/0.0.0.0/tcp/0` | Local TCP multiaddr for the Coordinator node. |
+| `--peer <MULTIADDR>` | `-p` | — | Worker peer multiaddr to dial (can be specified multiple times). |
+| `--chunk-lines <N>` | `-c` | `1` | Number of non-empty lines bundled into each `TaskPayload`. |
+| `--fuel <UNITS>` | `-f` | `10000000` | Maximum Wasmtime instruction fuel granted per task chunk. |
+| `--timeout <SECS>` | `-t` | `30` | Maximum time window (seconds) to await worker `ResultPayload`s. |
+
+### `worker` Flags
+
+| Flag | Short | Default | Description |
+| :--- | :---: | :--- | :--- |
+| `--listen <MULTIADDR>` | `-l` | `/ip4/0.0.0.0/tcp/0` | Local TCP multiaddr for the Worker daemon to bind. |
+| `--peer <MULTIADDR>` | `-p` | — | Optional bootstrap peer multiaddr to dial on startup. |
+
+---
 
 ## License
 
-See [LICENSE](./LICENSE) for details.
+Distributed under the terms of the repository [LICENSE](./LICENSE).
