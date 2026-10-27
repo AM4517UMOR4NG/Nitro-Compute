@@ -1,0 +1,20 @@
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "coordinator",
+    "worker",
+    "jobs/word-count",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+
+[workspace.dependencies]
+wasmtime = "22.0"
+wasmtime-wasi = "22.0"
+libp2p = { version = "0.53", features = ["tcp", "dns", "websocket", "noise", "yamux", "gossipsub", "kad", "macros", "tokio"] }
+tokio = { version = "1.0", features = ["full"] }
+anyhow = "1.0"
+serde = { version = "1.0", features = ["derive"] }
