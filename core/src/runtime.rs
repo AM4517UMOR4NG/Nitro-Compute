@@ -103,9 +103,9 @@ impl NitroRuntime {
         let module = Module::new(&self.engine, wasm_bytes)
             .context("Failed to compile WebAssembly module")?;
 
-        let instance = linker
-            .instantiate(&mut store, &module)
-            .map_err(|err| Self::classify_execution_error(err, &store, fuel_limit, "instantiate"))?;
+        let instance = linker.instantiate(&mut store, &module).map_err(|err| {
+            Self::classify_execution_error(err, &store, fuel_limit, "instantiate")
+        })?;
 
         let memory = instance
             .get_memory(&mut store, "memory")

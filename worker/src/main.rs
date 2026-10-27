@@ -89,14 +89,11 @@ async fn main() -> anyhow::Result<()> {
                 )
             })?;
 
-        let result_payload = ResultPayload::new(
-            task.task_id.clone(),
-            worker_peer_id.clone(),
-            computed_value,
-        );
+        let result_payload =
+            ResultPayload::new(task.task_id.clone(), worker_peer_id.clone(), computed_value);
 
-        let maybe_msg_id = publish_result_payload(swarm_ref, &result_payload)
-            .with_context(|| {
+        let maybe_msg_id =
+            publish_result_payload(swarm_ref, &result_payload).with_context(|| {
                 format!(
                     "Failed to publish ResultPayload for task_id='{}' onto '{}'",
                     task.task_id, TASK_RESULTS_TOPIC

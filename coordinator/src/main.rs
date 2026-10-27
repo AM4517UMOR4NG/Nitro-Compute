@@ -130,9 +130,12 @@ async fn load_wasm_binary(explicit_path: Option<&Path>) -> anyhow::Result<Vec<u8
         let path = Path::new(candidate);
         if path.exists() {
             info!(path = %path.display(), "Discovered compiled word-count Wasm binary");
-            return tokio::fs::read(path)
-                .await
-                .with_context(|| format!("Failed to read discovered Wasm binary at {}", path.display()));
+            return tokio::fs::read(path).await.with_context(|| {
+                format!(
+                    "Failed to read discovered Wasm binary at {}",
+                    path.display()
+                )
+            });
         }
     }
 
@@ -240,7 +243,12 @@ async fn collect_and_aggregate_results(
         .behaviour_mut()
         .gossipsub
         .subscribe(&results_topic)
-        .map_err(|e| anyhow!("Failed to subscribe coordinator to '{}': {e}", TASK_RESULTS_TOPIC))?;
+        .map_err(|e| {
+            anyhow!(
+                "Failed to subscribe coordinator to '{}': {e}",
+                TASK_RESULTS_TOPIC
+            )
+        })?;
 
     let results_topic_hash = results_topic.hash();
     let mut unified_sum: usize = 0;
