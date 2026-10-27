@@ -4,7 +4,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context};
 use libp2p::futures::StreamExt;
-use libp2p::swarm::{NetworkBehaviour as NetworkBehavior, SwarmEvent};
+#[allow(unused_imports)]
+use libp2p::swarm::{NetworkBehaviour, NetworkBehaviour as NetworkBehavior, SwarmEvent};
 use libp2p::{gossipsub, noise, tcp, yamux, Swarm, SwarmBuilder};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};

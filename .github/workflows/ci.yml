@@ -29,7 +29,7 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run Clippy lints
-        run: cargo clippy --workspace --all-targets
+        run: cargo clippy --workspace --all-targets --message-format=github
 
       - name: Build workspace in release mode
-        run: cargo build --release
+        run: cargo build --release --message-format=github
