@@ -1,0 +1,192 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 760" width="100%" height="100%">
+  <defs>
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0B0F17" />
+      <stop offset="50%" stop-color="#111827" />
+      <stop offset="100%" stop-color="#0D131F" />
+    </linearGradient>
+
+    <linearGradient id="coordGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1E293B" />
+      <stop offset="100%" stop-color="#0F172A" />
+    </linearGradient>
+
+    <linearGradient id="meshGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#1E1B4B" />
+      <stop offset="50%" stop-color="#172554" />
+      <stop offset="100%" stop-color="#1E1B4B" />
+    </linearGradient>
+
+    <linearGradient id="workerGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#0F172A" />
+      <stop offset="100%" stop-color="#1E293B" />
+    </linearGradient>
+
+    <linearGradient id="accentBlue" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#6366F1" />
+    </linearGradient>
+
+    <linearGradient id="accentPurple" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#8B5CF6" />
+      <stop offset="100%" stop-color="#EC4899" />
+    </linearGradient>
+
+    <linearGradient id="accentGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10B981" />
+      <stop offset="100%" stop-color="#059669" />
+    </linearGradient>
+
+    <marker id="arrowBlue" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#38BDF8" />
+    </marker>
+
+    <marker id="arrowGreen" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#10B981" />
+    </marker>
+
+    <marker id="arrowRed" viewBox="0 0 10 10" refX="6" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 1 L 10 5 L 0 9 z" fill="#F43F5E" />
+    </marker>
+
+    <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
+      <path d="M 28 0 L 0 0 0 28" fill="none" stroke="#1E293B" stroke-width="0.7" stroke-opacity="0.55" />
+    </pattern>
+  </defs>
+
+  <!-- Background -->
+  <rect width="1100" height="760" rx="16" fill="url(#bgGrad)" stroke="#334155" stroke-width="1.5" />
+  <rect width="1100" height="760" rx="16" fill="url(#grid)" />
+
+  <!-- Top Header Banner -->
+  <text x="45" y="42" fill="#F8FAFC" font-family="Segoe UI, Inter, system-ui, sans-serif" font-size="18" font-weight="700" letter-spacing="1.5">NITRO COMPUTE — END-TO-END EXECUTION PIPELINE</text>
+  <text x="45" y="64" fill="#94A3B8" font-family="Segoe UI, Inter, system-ui, sans-serif" font-size="12.5">Decentralized P2P Serverless MapReduce Architecture (Rust + libp2p + Wasmtime Cranelift)</text>
+  <line x1="45" y1="78" x2="1055" y2="78" stroke="#1E293B" stroke-width="1.5" />
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 1: COMPUTER A - COORDINATOR ORACLE                            -->
+  <!-- ===================================================================== -->
+  <rect x="45" y="96" width="760" height="175" rx="12" fill="url(#coordGrad)" stroke="#38BDF8" stroke-width="1.8" />
+  <rect x="45" y="96" width="760" height="36" rx="12" fill="#0EA5E9" fill-opacity="0.15" />
+  <text x="65" y="119" fill="#38BDF8" font-family="Consolas, monospace" font-size="13.5" font-weight="700" letter-spacing="1">[ COMPUTER A : COORDINATOR ORACLE ]</text>
+  <text x="625" y="119" fill="#7DD3FC" font-family="Consolas, monospace" font-size="11.5">coordinator/src/main.rs</text>
+
+  <!-- Step 1 Card -->
+  <rect x="65" y="146" width="225" height="106" rx="8" fill="#0B1120" stroke="#334155" stroke-width="1.2" />
+  <rect x="77" y="158" width="58" height="20" rx="4" fill="#0284C7" fill-opacity="0.25" />
+  <text x="86" y="172" fill="#38BDF8" font-family="Consolas, monospace" font-size="11" font-weight="700">STEP 1</text>
+  <text x="77" y="196" fill="#F1F5F9" font-family="Segoe UI, Inter, sans-serif" font-size="13" font-weight="600">Ingest Data Stream</text>
+  <text x="77" y="216" fill="#94A3B8" font-family="Segoe UI, Inter, sans-serif" font-size="11.5">Streams raw text file via</text>
+  <text x="77" y="233" fill="#7DD3FC" font-family="Consolas, monospace" font-size="11">BufReader &amp; fragments chunks</text>
+
+  <!-- Step 2 Card -->
+  <rect x="312" y="146" width="225" height="106" rx="8" fill="#0B1120" stroke="#334155" stroke-width="1.2" />
+  <rect x="324" y="158" width="58" height="20" rx="4" fill="#6366F1" fill-opacity="0.25" />
+  <text x="333" y="172" fill="#A5B4FC" font-family="Consolas, monospace" font-size="11" font-weight="700">STEP 2</text>
+  <text x="324" y="196" fill="#F1F5F9" font-family="Segoe UI, Inter, sans-serif" font-size="13" font-weight="600">Load Wasm Bytecode</text>
+  <text x="324" y="216" fill="#94A3B8" font-family="Segoe UI, Inter, sans-serif" font-size="11.5">Reads compiled guest module</text>
+  <text x="324" y="233" fill="#C4B5FD" font-family="Consolas, monospace" font-size="11">jobs/word_count.wasm</text>
+
+  <!-- Step 3 Card -->
+  <rect x="559" y="146" width="226" height="106" rx="8" fill="#0B1120" stroke="#334155" stroke-width="1.2" />
+  <rect x="571" y="158" width="58" height="20" rx="4" fill="#8B5CF6" fill-opacity="0.25" />
+  <text x="580" y="172" fill="#C4B5FD" font-family="Consolas, monospace" font-size="11" font-weight="700">STEP 3</text>
+  <text x="571" y="196" fill="#F1F5F9" font-family="Segoe UI, Inter, sans-serif" font-size="13" font-weight="600">Pack TaskPayload</text>
+  <text x="571" y="216" fill="#94A3B8" font-family="Consolas, monospace" font-size="10.8">{ task_id, wasm_binary,</text>
+  <text x="571" y="233" fill="#94A3B8" font-family="Consolas, monospace" font-size="10.8">  data_chunk, fuel }</text>
+
+  <!-- Internal arrows 1 -> 2 -> 3 -->
+  <line x1="290" y1="199" x2="308" y2="199" stroke="#38BDF8" stroke-width="1.6" marker-end="url(#arrowBlue)" />
+  <line x1="537" y1="199" x2="555" y2="199" stroke="#38BDF8" stroke-width="1.6" marker-end="url(#arrowBlue)" />
+
+  <!-- Downward Arrow: Phase 5 ("task-alloc") -->
+  <line x1="425" y1="271" x2="425" y2="318" stroke="#38BDF8" stroke-width="2.2" stroke-dasharray="5,3" marker-end="url(#arrowBlue)" />
+  <rect x="175" y="281" width="500" height="26" rx="13" fill="#0F172A" stroke="#0284C7" stroke-width="1.2" />
+  <text x="425" y="298" text-anchor="middle" fill="#7DD3FC" font-family="Consolas, monospace" font-size="11.5" font-weight="600">PHASE 5: Broadcast TaskPayload to Gossipsub Topic "task-alloc"</text>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 2: DECENTRALIZED P2P MESH (libp2p)                            -->
+  <!-- ===================================================================== -->
+  <rect x="45" y="325" width="760" height="122" rx="12" fill="url(#meshGrad)" stroke="#818CF8" stroke-width="1.8" />
+  <text x="65" y="351" fill="#A5B4FC" font-family="Consolas, monospace" font-size="13.5" font-weight="700" letter-spacing="1">[ DECENTRALIZED P2P MESH FABRIC — libp2p v0.53 ]</text>
+  <text x="645" y="351" fill="#818CF8" font-family="Consolas, monospace" font-size="11.5">core/src/network.rs</text>
+
+  <!-- Mesh Feature Pill 1 -->
+  <rect x="65" y="366" width="350" height="64" rx="8" fill="#090D16" fill-opacity="0.75" stroke="#4F46E5" stroke-width="1.2" />
+  <text x="83" y="391" fill="#E0E7FF" font-family="Segoe UI, Inter, sans-serif" font-size="13" font-weight="600">Multi-Routing &amp; Peer Discovery</text>
+  <text x="83" y="413" fill="#A5B4FC" font-family="Consolas, monospace" font-size="11.5">kademlia::Kademlia&lt;MemoryStore&gt; + Gossipsub</text>
+
+  <!-- Mesh Feature Pill 2 -->
+  <rect x="435" y="366" width="350" height="64" rx="8" fill="#090D16" fill-opacity="0.75" stroke="#4F46E5" stroke-width="1.2" />
+  <text x="453" y="391" fill="#E0E7FF" font-family="Segoe UI, Inter, sans-serif" font-size="13" font-weight="600">Authenticated Encrypted Transport</text>
+  <text x="453" y="413" fill="#A5B4FC" font-family="Consolas, monospace" font-size="11.5">TCP Sockets + Noise Handshake + Yamux Mux</text>
+
+  <!-- Downward Arrow: Mesh -> Worker -->
+  <line x1="425" y1="447" x2="425" y2="494" stroke="#38BDF8" stroke-width="2.2" stroke-dasharray="5,3" marker-end="url(#arrowBlue)" />
+  <rect x="215" y="457" width="420" height="26" rx="13" fill="#0F172A" stroke="#6366F1" stroke-width="1.2" />
+  <text x="425" y="474" text-anchor="middle" fill="#C7D2FE" font-family="Consolas, monospace" font-size="11.5" font-weight="600">Received Asynchronously by Idle Edge Worker Node</text>
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 3: COMPUTER B - WORKER NODE & WASMTIME SANDBOX                -->
+  <!-- ===================================================================== -->
+  <rect x="45" y="502" width="760" height="232" rx="12" fill="url(#workerGrad)" stroke="#A855F7" stroke-width="1.8" />
+  <rect x="45" y="502" width="760" height="36" rx="12" fill="#9333EA" fill-opacity="0.15" />
+  <text x="65" y="525" fill="#D8B4FE" font-family="Consolas, monospace" font-size="13.5" font-weight="700" letter-spacing="1">[ COMPUTER B : EDGE WORKER NODE &amp; WASMTIME SANDBOX ]</text>
+  <text x="565" y="525" fill="#C084FC" font-family="Consolas, monospace" font-size="11.5">worker/src/main.rs • runtime.rs</text>
+
+  <!-- Step 4 & 5 Left Column -->
+  <rect x="65" y="550" width="235" height="76" rx="8" fill="#0B1120" stroke="#334155" stroke-width="1.2" />
+  <text x="79" y="572" fill="#38BDF8" font-family="Consolas, monospace" font-size="11" font-weight="700">STEP 4 — INTERCEPT &amp; DECODE</text>
+  <text x="79" y="592" fill="#F1F5F9" font-family="Segoe UI, Inter, sans-serif" font-size="12.5" font-weight="600">Deserialize Wire Frame</text>
+  <text x="79" y="611" fill="#94A3B8" font-family="Consolas, monospace" font-size="11">TaskPayload::from_bytes()</text>
+
+  <rect x="65" y="640" width="235" height="76" rx="8" fill="#0B1120" stroke="#334155" stroke-width="1.2" />
+  <text x="79" y="662" fill="#C084FC" font-family="Consolas, monospace" font-size="11" font-weight="700">STEP 5 — BOOT SANDBOX (&lt;1ms)</text>
+  <text x="79" y="682" fill="#F1F5F9" font-family="Segoe UI, Inter, sans-serif" font-size="12.5" font-weight="600">Cranelift OptLevel::Speed</text>
+  <text x="79" y="701" fill="#94A3B8" font-family="Consolas, monospace" font-size="11">WasiCtxBuilder::build_p1()</text>
+
+  <line x1="182" y1="626" x2="182" y2="636" stroke="#38BDF8" stroke-width="1.6" marker-end="url(#arrowBlue)" />
+
+  <!-- Step 6 Center Column: Fuel Metering Guard -->
+  <rect x="322" y="550" width="265" height="166" rx="8" fill="#0B1120" stroke="#A855F7" stroke-width="1.5" />
+  <text x="338" y="572" fill="#E879F9" font-family="Consolas, monospace" font-size="11" font-weight="700">STEP 6 — WASM FUEL METERING</text>
+  <text x="338" y="592" fill="#F8FAFC" font-family="Consolas, monospace" font-size="11.5" font-weight="600">store.add_fuel(fuel_limit)?</text>
+
+  <!-- Safe Path Branch -->
+  <rect x="336" y="606" width="237" height="46" rx="6" fill="#064E3B" fill-opacity="0.45" stroke="#10B981" stroke-width="1.2" />
+  <text x="348" y="625" fill="#34D399" font-family="Consolas, monospace" font-size="11" font-weight="700">WITHIN FUEL BUDGET (SAFE)</text>
+  <text x="348" y="642" fill="#D1FAE5" font-family="Consolas, monospace" font-size="10.8">Invoke map_line(ptr, len)</text>
+
+  <!-- Infinite Loop Trap Branch -->
+  <rect x="336" y="660" width="237" height="46" rx="6" fill="#4C0519" fill-opacity="0.55" stroke="#F43F5E" stroke-width="1.2" />
+  <text x="348" y="679" fill="#FB7185" font-family="Consolas, monospace" font-size="11" font-weight="700">INFINITE LOOP / EXCEEDED</text>
+  <text x="348" y="696" fill="#FFE4E6" font-family="Consolas, monospace" font-size="10.8">Trap::OutOfFuel -&gt; Aborted!</text>
+
+  <line x1="300" y1="678" x2="318" y2="635" stroke="#A855F7" stroke-width="1.6" marker-end="url(#arrowBlue)" />
+
+  <!-- Step 7 Right Column: Pack ResultPayload -->
+  <rect x="609" y="550" width="176" height="166" rx="8" fill="#0B1120" stroke="#10B981" stroke-width="1.5" />
+  <text x="623" y="572" fill="#34D399" font-family="Consolas, monospace" font-size="11" font-weight="700">STEP 7 — PACK RESULT</text>
+  <text x="623" y="595" fill="#F1F5F9" font-family="Segoe UI, Inter, sans-serif" font-size="13" font-weight="600">ResultPayload</text>
+  <text x="623" y="620" fill="#A7F3D0" font-family="Consolas, monospace" font-size="10.8">{</text>
+  <text x="633" y="637" fill="#A7F3D0" font-family="Consolas, monospace" font-size="10.8">task_id,</text>
+  <text x="633" y="654" fill="#A7F3D0" font-family="Consolas, monospace" font-size="10.8">worker_peer_id,</text>
+  <text x="633" y="671" fill="#A7F3D0" font-family="Consolas, monospace" font-size="10.8">computed_value</text>
+  <text x="623" y="688" fill="#A7F3D0" font-family="Consolas, monospace" font-size="10.8">}</text>
+
+  <line x1="573" y1="629" x2="604" y2="629" stroke="#10B981" stroke-width="1.8" marker-end="url(#arrowGreen)" />
+
+  <!-- ===================================================================== -->
+  <!-- SECTION 4: PHASE 6 BIDIRECTIONAL RESULT RETURN LOOP (RIGHT CHANNEL)   -->
+  <!-- ===================================================================== -->
+  <path d="M 785 633 L 945 633 L 945 184 L 812 184" fill="none" stroke="#10B981" stroke-width="2.5" stroke-dasharray="6,4" marker-end="url(#arrowGreen)" />
+
+  <rect x="835" y="330" width="225" height="145" rx="10" fill="#064E3B" fill-opacity="0.35" stroke="#10B981" stroke-width="1.6" />
+  <rect x="851" y="346" width="74" height="22" rx="4" fill="#10B981" fill-opacity="0.25" />
+  <text x="860" y="361" fill="#34D399" font-family="Consolas, monospace" font-size="11" font-weight="700">PHASE 6</text>
+  <text x="851" y="387" fill="#ECFDF5" font-family="Segoe UI, Inter, sans-serif" font-size="13" font-weight="700">Return Loop Channel</text>
+  <text x="851" y="408" fill="#6EE7B7" font-family="Consolas, monospace" font-size="11.5">Topic: "task-results"</text>
+  <text x="851" y="430" fill="#D1FAE5" font-family="Segoe UI, Inter, sans-serif" font-size="11.5">Streams ResultPayload back</text>
+  <text x="851" y="447" fill="#D1FAE5" font-family="Segoe UI, Inter, sans-serif" font-size="11.5">to Coordinator for unified</text>
+  <text x="851" y="464" fill="#D1FAE5" font-family="Segoe UI, Inter, sans-serif" font-size="11.5">MapReduce sum aggregation</text>
+</svg>

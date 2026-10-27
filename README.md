@@ -48,36 +48,56 @@ Idle edge nodes (**Workers**) intercept task broadcasts, instantiate hardware-ac
 
 ### System Dataflow Blueprint
 
-```text
-+-----------------------------------------------------------------------+ <--+
-|                      [ COMPUTER A: COORDINATOR ]                      |    |
-+-----------------------------------------------------------------------+    |
-  |                                                                          |
-  |-- 1. Ingest Data Stream (File teks besar dipecah jadi chunk)             |
-  |-- 2. Load jobs/word-count.wasm (Bytecode terkompilasi)                   |
-  |-- 3. Pack Payload: TaskPayload { data_chunk, wasm, fuel_limit }          |
-  |                                                                          |
-  v  (Fase 5: Kirim ke "task-alloc" channel via libp2p Gossipsub)            |
-+=======================================================================+    |
-|                      JARINGAN DECENTRALIZED P2P                       |    |
-|                                                                       |    |
-|  --> Multi-routing & Peer Discovery (Kademlia DHT)                    |    |
-|  --> Transport Terenkripsi Aman (Noise Protocol + Yamux Multiplex)    |    |
-+=======================================================================+    |
-  |                                                                          |
-  v  (Diterima Node Worker yang idle secara asinkronus)                      |
-+-----------------------------------------------------------------------+    |
-|                       [ COMPUTER B: WORKER NODE ]                     |    |
-+-----------------------------------------------------------------------+    |
-  |                                                                          |
-  |-- 4. Intersept Jaringan & Decode TaskPayload biner                       |
-  |-- 5. Booting Sandbox: Inisialisasi Instansi Wasmtime (< 1ms)             |
-  |-- 6. FUEL METERING: Suntik store.add_fuel(fuel_limit) ke Sandbox         |
-  |        |-- JIKA kode aman     -> Eksekusi fungsi map_line                |
-  |        +-- JIKA infinite-loop -> Trap::OutOfFuel (Diputus paksa!)        |
-  |                                                                          |
-  +-- 7. Pack Result: Bungkus hasil angka ke ResultPayload ------------------+
-         (Fase 6: Kirim balik via "task-results" channel Gossipsub)
+<div align="center">
+  <img src="./assets/architecture.svg" alt="Nitro Compute End-to-End Execution Pipeline" width="100%" />
+</div>
+
+### Topological Architecture Graph
+
+```mermaid
+flowchart TD
+    subgraph COORD["COMPUTER A : COORDINATOR ORACLE (coordinator/src/main.rs)"]
+        direction LR
+        S1["1. Ingest Data Stream<br/>Async BufReader Chunking"] --> S2["2. Load Wasm Bytecode<br/>jobs/word-count.wasm"]
+        S2 --> S3["3. Pack TaskPayload<br/>{ task_id, wasm_binary, data_chunk, fuel }"]
+    end
+
+    subgraph MESH["DECENTRALIZED P2P MESH FABRIC (core/src/network.rs)"]
+        direction TB
+        DHT["Kademlia DHT Routing<br/>kademlia::Kademlia&lt;MemoryStore&gt;"]
+        SEC["Encrypted Transport<br/>TCP + Noise Handshake + Yamux Mux"]
+        TOPIC_ALLOC(("Gossipsub Topic<br/>'task-alloc'"))
+        TOPIC_RES(("Gossipsub Topic<br/>'task-results'"))
+    end
+
+    subgraph WORKER["COMPUTER B : EDGE WORKER & WASMTIME SANDBOX (worker/ & core/src/runtime.rs)"]
+        direction TB
+        S4["4. Intercept & Decode Frame<br/>TaskPayload::from_bytes()"] --> S5["5. Boot Wasmtime Sandbox (&lt;1ms)<br/>Cranelift OptLevel::Speed + WASI Preview 1"]
+        S5 --> S6{"6. Fuel Metering Guard<br/>store.add_fuel(fuel_limit)?"}
+        S6 -- "Within Fuel Budget (Safe)" --> EXEC["Execute Exported Guest Function<br/>map_line(ptr, len) -> usize"]
+        S6 -- "Fuel Exhausted (Infinite Loop)" --> TRAP["Trap::OutOfFuel Triggered<br/>Abort Guest Execution Safely"]
+        EXEC --> S7["7. Pack ResultPayload<br/>{ task_id, worker_peer_id, computed_value }"]
+    end
+
+    S3 ==>|"Phase 5: Broadcast TaskPayload"| TOPIC_ALLOC
+    TOPIC_ALLOC -.-> DHT & SEC
+    TOPIC_ALLOC ==>|"Async Mesh Delivery"| S4
+    S7 ==>|"Phase 6: Publish ResultPayload"| TOPIC_RES
+    TOPIC_RES ==>|"Aggregate Unified MapReduce Sum"| COORD
+
+    classDef coordBox fill:#0F172A,stroke:#38BDF8,stroke-width:2px,color:#F8FAFC
+    classDef meshBox fill:#1E1B4B,stroke:#818CF8,stroke-width:2px,color:#E0E7FF
+    classDef workerBox fill:#18181B,stroke:#A855F7,stroke-width:2px,color:#F8FAFC
+    classDef safeNode fill:#064E3B,stroke:#10B981,stroke-width:2px,color:#ECFDF5
+    classDef trapNode fill:#4C0519,stroke:#F43F5E,stroke-width:2px,color:#FFE4E6
+    classDef topicNode fill:#0284C7,stroke:#7DD3FC,stroke-width:2px,color:#FFFFFF
+
+    class S1,S2,S3 coordBox
+    class DHT,SEC meshBox
+    class S4,S5,S6 workerBox
+    class EXEC,S7 safeNode
+    class TRAP trapNode
+    class TOPIC_ALLOC,TOPIC_RES topicNode
 ```
 
 ### Interactive Sequence Diagram
