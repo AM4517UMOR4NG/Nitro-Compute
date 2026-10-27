@@ -9,5 +9,7 @@ path = "src/lib.rs"
 [dependencies]
 wasmtime = { workspace = true }
 wasmtime-wasi = { workspace = true }
+libp2p = { workspace = true }
+tokio = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
