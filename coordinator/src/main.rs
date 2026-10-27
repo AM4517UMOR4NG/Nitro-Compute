@@ -3,13 +3,13 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{anyhow, Context};
-use core::network::{
-    create_swarm, publish_task_payload, NitroBehavior, NitroBehaviorEvent, ResultPayload,
-    TaskPayload, DEFAULT_FUEL_LIMIT, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
-};
 use libp2p::futures::StreamExt;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{gossipsub, Multiaddr, Swarm};
+use nitro_core::network::{
+    create_swarm, publish_task_payload, NitroBehavior, NitroBehaviorEvent, ResultPayload,
+    TaskPayload, DEFAULT_FUEL_LIMIT, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
+};
 use tokio::fs::File;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tracing::{debug, info, warn};
@@ -342,7 +342,7 @@ async fn collect_and_aggregate_results(
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    core::init_logging();
+    nitro_core::init_logging();
 
     let config = CoordinatorConfig::from_args()?;
     info!(

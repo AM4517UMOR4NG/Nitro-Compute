@@ -1,15 +1,15 @@
 use anyhow::Context;
-use core::network::{
+use libp2p::Multiaddr;
+use nitro_core::network::{
     create_swarm, publish_result_payload, run_event_loop_with_handler, ResultPayload, TaskPayload,
     TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
 };
-use core::runtime::NitroRuntime;
-use libp2p::Multiaddr;
+use nitro_core::runtime::NitroRuntime;
 use tracing::{error, info};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    core::init_logging();
+    nitro_core::init_logging();
 
     let mut listen_addr: Multiaddr = "/ip4/0.0.0.0/tcp/0"
         .parse()

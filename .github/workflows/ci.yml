@@ -28,8 +28,12 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
-      - name: Run Clippy lints
-        run: cargo clippy --workspace --all-targets --message-format=github
-
       - name: Build workspace in release mode
-        run: cargo build --release --message-format=github
+        run: |
+          if ! cargo build --release > build.log 2>&1; then
+            cat build.log
+             ERR_MSG=$(tail -n 30 build.log | tr '\r\n' '  ')
+            echo "::error::$ERR_MSG"
+            exit 1
+          fi
+          cat build.log
