@@ -1,0 +1,17 @@
+[package]
+name = "worker"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "worker"
+path = "src/main.rs"
+
+[dependencies]
+core = { path = "../core" }
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
+libp2p = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
