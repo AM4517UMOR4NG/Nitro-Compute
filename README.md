@@ -309,6 +309,19 @@ INFO coordinator: Final aggregated MapReduce word count sum: 184
 
 ---
 
+## Documentation & Governance
+
+| Document | Description |
+| :--- | :--- |
+| **[`ARCHITECTURE.md`](./ARCHITECTURE.md)** | Deep-dive specification of the Wasmtime sandbox, linear memory ABI, and `libp2p` mesh protocol. |
+| **[`SECURITY.md`](./SECURITY.md)** | Threat model, defense-in-depth controls (`Trap::OutOfFuel`, WASI isolation, Noise encryption), and disclosure policy. |
+| **[`CONTRIBUTING.md`](./CONTRIBUTING.md)** | Contributor workflow, guide for authoring new `wasm32-wasi` job kernels, and PR verification standards. |
+| **[`CODE_OF_CONDUCT.md`](./CODE_OF_CONDUCT.md)** | Community standards based on the Contributor Covenant v2.1. |
+| **[`CHANGELOG.md`](./CHANGELOG.md)** | Version history and release notes following Keep a Changelog. |
+| **[`LICENSE`](./LICENSE)** | Repository open-source license terms. |
+
+---
+
 ## Contributing
 
 Contributions to **Nitro Compute** are welcome—whether improving P2P routing resilience, optimizing Wasmtime linear memory zero-copy transfers, or authoring new `wasm32-wasi` compute kernels.
