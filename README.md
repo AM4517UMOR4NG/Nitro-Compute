@@ -49,30 +49,35 @@ Idle edge nodes (**Workers**) intercept task broadcasts, instantiate hardware-ac
 ### System Dataflow Blueprint
 
 ```text
-[ COMPUTER A: COORDINATOR ] ◄────────────────────────────────────────┐
-  │                                                                   │
-  ├── 1. Ingest Data Stream (File teks besar dipecah jadi chunk)      │ (Fase 6: Gossipsub)
-  ├── 2. Load jobs/word-count.wasm (Bytecode terkompilasi)            │ "task-results" channel
-  ├── 3. Pack Payload: TaskPayload { data_chunk, wasm, fuel_limit }   │ membawa ResultPayload
-  │                                                                   │
-  ▼  (Fase 5: Kirim ke "task-alloc" channel via libp2p Gossipsub)     │
-========================== JARINGAN DECENTRALIZED P2P ==========================
-  │                                                                   │
-  ├──► Multi-routing & Peer Discovery (Kademlia DHT)                  │
-  ├──► Transport Terenkripsi Aman (Noise Protocol + Yamux Multiplex)  │
-  │                                                                   │
-================================================================================
-  │
-  ▼  (Diterima Node Worker yang idle secara asinkronus)
-[ COMPUTER B: WORKER NODE ] ──────────────────────────────────────────┘
-  │
-  ├── 4. Intersept Jaringan & Decode TaskPayload biner
-  ├── 5. Booting Sandbox: Inisialisasi Instansi Wasmtime (< 1ms)
-  ├── 6. FUEL METERING: Suntik `store.add_fuel(fuel_limit)` ke Sandbox
-  │         ├── JIKA kode aman -> Eksekusi fungsi `map_line` via pointer memori
-  │         └── JIKA kena infinite-loop -> Trap aktif, eksekusi diputus paksa (Aman!)
-  │
-  └── 7. Pack Result: Bungkus hasil angka ke `ResultPayload`
++-----------------------------------------------------------------------+ <--+
+|                      [ COMPUTER A: COORDINATOR ]                      |    |
++-----------------------------------------------------------------------+    |
+  |                                                                          |
+  |-- 1. Ingest Data Stream (File teks besar dipecah jadi chunk)             |
+  |-- 2. Load jobs/word-count.wasm (Bytecode terkompilasi)                   |
+  |-- 3. Pack Payload: TaskPayload { data_chunk, wasm, fuel_limit }          |
+  |                                                                          |
+  v  (Fase 5: Kirim ke "task-alloc" channel via libp2p Gossipsub)            |
++=======================================================================+    |
+|                      JARINGAN DECENTRALIZED P2P                       |    |
+|                                                                       |    |
+|  --> Multi-routing & Peer Discovery (Kademlia DHT)                    |    |
+|  --> Transport Terenkripsi Aman (Noise Protocol + Yamux Multiplex)    |    |
++=======================================================================+    |
+  |                                                                          |
+  v  (Diterima Node Worker yang idle secara asinkronus)                      |
++-----------------------------------------------------------------------+    |
+|                       [ COMPUTER B: WORKER NODE ]                     |    |
++-----------------------------------------------------------------------+    |
+  |                                                                          |
+  |-- 4. Intersept Jaringan & Decode TaskPayload biner                       |
+  |-- 5. Booting Sandbox: Inisialisasi Instansi Wasmtime (< 1ms)             |
+  |-- 6. FUEL METERING: Suntik store.add_fuel(fuel_limit) ke Sandbox         |
+  |        |-- JIKA kode aman     -> Eksekusi fungsi map_line                |
+  |        +-- JIKA infinite-loop -> Trap::OutOfFuel (Diputus paksa!)        |
+  |                                                                          |
+  +-- 7. Pack Result: Bungkus hasil angka ke ResultPayload ------------------+
+         (Fase 6: Kirim balik via "task-results" channel Gossipsub)
 ```
 
 ### Interactive Sequence Diagram
