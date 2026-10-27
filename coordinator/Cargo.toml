@@ -1,0 +1,15 @@
+[package]
+name = "coordinator"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "coordinator"
+path = "src/main.rs"
+
+[dependencies]
+core = { path = "../core" }
+libp2p = { workspace = true }
+tokio = { workspace = true }
+anyhow = { workspace = true }
+serde = { workspace = true }
