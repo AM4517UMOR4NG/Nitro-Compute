@@ -19,7 +19,8 @@
 [**P2P Protocol**](#decentralized-p2p-wire-protocol) •
 [**Workspace**](#workspace-architecture) •
 [**Quick Start**](#quick-start--deployment) •
-[**CLI Reference**](#cli-reference)
+[**CLI Reference**](#cli-reference) •
+[**Contributing**](#contributing)
 
 </div>
 
@@ -305,6 +306,49 @@ INFO coordinator: Final aggregated MapReduce word count sum: 184
 | :--- | :---: | :--- | :--- |
 | `--listen <MULTIADDR>` | `-l` | `/ip4/0.0.0.0/tcp/0` | Local TCP multiaddr for the Worker daemon to bind. |
 | `--peer <MULTIADDR>` | `-p` | — | Optional bootstrap peer multiaddr to dial on startup. |
+
+---
+
+## Contributing
+
+Contributions to **Nitro Compute** are welcome—whether improving P2P routing resilience, optimizing Wasmtime linear memory zero-copy transfers, or authoring new `wasm32-wasi` compute kernels.
+
+### Development Workflow
+
+1. **Fork and Clone the Repository**
+   ```bash
+   git clone https://github.com/AM4517UMOR4NG/Nitro-Compute.git
+   cd Nitro-Compute
+   ```
+
+2. **Create a Feature or Fix Branch**
+   ```bash
+   git checkout -b feat/your-feature-name
+   ```
+
+3. **Authoring New WebAssembly Job Kernels (`jobs/<job-name>`)**
+   Every guest compute module under `jobs/` must compile to `wasm32-wasi` (`crate-type = ["cdylib", "rlib"]`) and adhere to the sandbox ABI contract:
+   - Export `#[no_mangle] pub extern "C" fn alloc(len: usize) -> *mut u8`
+   - Export `#[no_mangle] pub extern "C" fn dealloc(ptr: *mut u8, len: usize)`
+   - Export `#[no_mangle] pub extern "C" fn map_line(ptr: *const u8, len: usize) -> usize`
+
+4. **Run Pre-Submission Verification**
+   Ensure formatting, lint checks, and release builds pass with zero warnings:
+   ```bash
+   cargo fmt --all -- --check
+   cargo clippy --workspace --all-targets -- -D warnings
+   cargo build --manifest-path jobs/word-count/Cargo.toml --target wasm32-wasi --release
+   cargo build --release
+   ```
+
+5. **Commit Using Conventional Commits**
+   Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification (`feat:`, `fix:`, `security:`, `refactor:`, `perf:`, `docs:`, `chore:`) and open a Pull Request against `main`.
+
+### Contributors
+
+<a href="https://github.com/AM4517UMOR4NG/Nitro-Compute/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=AM4517UMOR4NG/Nitro-Compute" alt="Nitro Compute Contributors" />
+</a>
 
 ---
 
