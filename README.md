@@ -86,19 +86,13 @@ flowchart TD
     S7 ==>|"Phase 6: Publish ResultPayload"| TOPIC_RES
     TOPIC_RES ==>|"Aggregate Unified MapReduce Sum"| COORD
 
-    classDef coordBox fill:#0F172A,stroke:#38BDF8,stroke-width:2px,color:#F8FAFC
-    classDef meshBox fill:#1E1B4B,stroke:#818CF8,stroke-width:2px,color:#E0E7FF
-    classDef workerBox fill:#18181B,stroke:#A855F7,stroke-width:2px,color:#F8FAFC
-    classDef safeNode fill:#064E3B,stroke:#10B981,stroke-width:2px,color:#ECFDF5
-    classDef trapNode fill:#4C0519,stroke:#F43F5E,stroke-width:2px,color:#FFE4E6
-    classDef topicNode fill:#0284C7,stroke:#7DD3FC,stroke-width:2px,color:#FFFFFF
+    classDef defaultNode fill:#161B22,stroke:#30363D,stroke-width:1.5px,color:#E6EDF3
+    classDef frameGroup fill:#0D1117,stroke:#30363D,stroke-width:1.5px,color:#C9D1D9
+    classDef trapNode fill:#161B22,stroke:#F85149,stroke-width:1.5px,color:#FFA198
 
-    class S1,S2,S3 coordBox
-    class DHT,SEC meshBox
-    class S4,S5,S6 workerBox
-    class EXEC,S7 safeNode
+    class S1,S2,S3,DHT,SEC,TOPIC_ALLOC,TOPIC_RES,S4,S5,S6,EXEC,S7 defaultNode
+    class COORD,MESH,WORKER frameGroup
     class TRAP trapNode
-    class TOPIC_ALLOC,TOPIC_RES topicNode
 ```
 
 ### Interactive Sequence Diagram
