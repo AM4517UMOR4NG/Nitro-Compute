@@ -6,5 +6,5 @@ pub use ::core::*;
 pub mod network;
 pub mod runtime;
 
-pub use network::NitroBehavior;
+pub use network::{create_swarm, run_event_loop, NitroBehavior};
 pub use runtime::NitroRuntime;
