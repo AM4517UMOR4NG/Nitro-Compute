@@ -7,5 +7,7 @@ edition.workspace = true
 path = "src/lib.rs"
 
 [dependencies]
+wasmtime = { workspace = true }
+wasmtime-wasi = { workspace = true }
 anyhow = { workspace = true }
 serde = { workspace = true }
