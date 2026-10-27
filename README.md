@@ -49,50 +49,40 @@ Idle edge nodes (**Workers**) intercept task broadcasts, instantiate hardware-ac
 
 ### System Dataflow Blueprint
 
-<div align="center">
-  <img src="./assets/architecture.svg" alt="Nitro Compute End-to-End Execution Pipeline" width="100%" />
-</div>
-
-### Topological Architecture Graph
-
 ```mermaid
 flowchart TD
-    subgraph COORD["COMPUTER A : COORDINATOR ORACLE (coordinator/src/main.rs)"]
-        direction LR
-        S1["1. Ingest Data Stream<br/>Async BufReader Chunking"] --> S2["2. Load Wasm Bytecode<br/>jobs/word-count.wasm"]
-        S2 --> S3["3. Pack TaskPayload<br/>{ task_id, wasm_binary, data_chunk, fuel }"]
-    end
-
-    subgraph MESH["DECENTRALIZED P2P MESH FABRIC (core/src/network.rs)"]
+    subgraph ComputerA["[ COMPUTER A: COORDINATOR ] (coordinator/src/main.rs)"]
         direction TB
-        DHT["Kademlia DHT Routing<br/>kademlia::Kademlia&lt;MemoryStore&gt;"]
-        SEC["Encrypted Transport<br/>TCP + Noise Handshake + Yamux Mux"]
-        TOPIC_ALLOC(("Gossipsub Topic<br/>'task-alloc'"))
-        TOPIC_RES(("Gossipsub Topic<br/>'task-results'"))
+        Step1["1. Ingest Data Stream: Fragment large text file into chunks"]
+        Step2["2. Load Bytecode: Read compiled jobs/word-count.wasm"]
+        Step3["3. Pack Payload: TaskPayload { task_id, wasm_binary, data_chunk, fuel }"]
+        Step1 --> Step2 --> Step3
     end
 
-    subgraph WORKER["COMPUTER B : EDGE WORKER & WASMTIME SANDBOX (worker/ & core/src/runtime.rs)"]
+    subgraph P2PMesh["[ DECENTRALIZED P2P NETWORK ] (core/src/network.rs)"]
         direction TB
-        S4["4. Intercept & Decode Frame<br/>TaskPayload::from_bytes()"] --> S5["5. Boot Wasmtime Sandbox (&lt;1ms)<br/>Cranelift OptLevel::Speed + WASI Preview 1"]
-        S5 --> S6{"6. Fuel Metering Guard<br/>store.add_fuel(fuel_limit)?"}
-        S6 -- "Within Fuel Budget (Safe)" --> EXEC["Execute Exported Guest Function<br/>map_line(ptr, len) -> usize"]
-        S6 -- "Fuel Exhausted (Infinite Loop)" --> TRAP["Trap::OutOfFuel Triggered<br/>Abort Guest Execution Safely"]
-        EXEC --> S7["7. Pack ResultPayload<br/>{ task_id, worker_peer_id, computed_value }"]
+        MeshRouting["Multi-routing & Peer Discovery (Kademlia DHT)"]
+        MeshCrypto["Encrypted Transport (Noise Protocol + Yamux Multiplexing)"]
+        MeshRouting --- MeshCrypto
     end
 
-    S3 ==>|"Phase 5: Broadcast TaskPayload"| TOPIC_ALLOC
-    TOPIC_ALLOC -.-> DHT & SEC
-    TOPIC_ALLOC ==>|"Async Mesh Delivery"| S4
-    S7 ==>|"Phase 6: Publish ResultPayload"| TOPIC_RES
-    TOPIC_RES ==>|"Aggregate Unified MapReduce Sum"| COORD
+    subgraph ComputerB["[ COMPUTER B: WORKER NODE ] (worker/src/main.rs & core/src/runtime.rs)"]
+        direction TB
+        Step4["4. Intercept Network & Decode Binary TaskPayload"]
+        Step5["5. Booting Sandbox: Initialize Wasmtime Instance (< 1ms)"]
+        Step6{"6. FUEL METERING: Inject store.add_fuel(fuel_limit)"}
+        SafeBranch["Within Fuel Budget: Execute exported map_line(ptr, len) via linear memory"]
+        TrapBranch["Infinite Loop / Exceeded: Trap::OutOfFuel aborts execution safely"]
+        Step7["7. Pack Result: Wrap computed integer into ResultPayload"]
 
-    classDef defaultNode fill:#161B22,stroke:#30363D,stroke-width:1.5px,color:#E6EDF3
-    classDef frameGroup fill:#0D1117,stroke:#30363D,stroke-width:1.5px,color:#C9D1D9
-    classDef trapNode fill:#161B22,stroke:#F85149,stroke-width:1.5px,color:#FFA198
+        Step4 --> Step5 --> Step6
+        Step6 -- "Safe Execution" --> SafeBranch --> Step7
+        Step6 -- "Infinite Loop" --> TrapBranch
+    end
 
-    class S1,S2,S3,DHT,SEC,TOPIC_ALLOC,TOPIC_RES,S4,S5,S6,EXEC,S7 defaultNode
-    class COORD,MESH,WORKER frameGroup
-    class TRAP trapNode
+    Step3 -- "Phase 5: Broadcast to 'task-alloc' channel via Gossipsub" --> P2PMesh
+    P2PMesh -- "Delivered asynchronously to idle Worker node" --> Step4
+    Step7 -- "Phase 6: Return ResultPayload via 'task-results' Gossipsub channel" --> ComputerA
 ```
 
 ### Interactive Sequence Diagram
