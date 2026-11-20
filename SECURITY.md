@@ -8,10 +8,10 @@ Nitro Compute is designed to execute untrusted, network-delivered compute worklo
 
 In a decentralized P2P compute fabric, an adversary may attempt to:
 
-1. **Broadcast Malicious Bytecode (DoS / Infinite Loops)**: Publish a `TaskPayload` containing a WebAssembly module with an intentional infinite loop (`loop {}`) to exhaust worker CPU cores.
-2. **Sandbox Escape / Memory Corruption**: Craft out-of-bounds linear memory reads or writes inside the Wasm guest to inspect or corrupt host worker memory.
-3. **Unauthorized Host System Access**: Attempt to read local files, environment secrets, or open unauthorized network sockets from inside a guest MapReduce task.
-4. **Network Spoofing / Man-in-the-Middle**: Intercept or tamper with task allocations or result payloads in transit across the P2P mesh.
+1. **CPU Exhaustion (Infinite Loops)**: Broadcast a `TaskPayload` containing a WebAssembly module with an intentional infinite loop (`loop {}`) to exhaust worker CPU cores.
+2. **Memory / Table Exhaustion (OOM Bombs)**: Broadcast a WebAssembly module that declares oversized linear memories or invokes `memory.grow` / `table.grow` repeatedly to crash worker hosts.
+3. **Wire Decompression Bombs & Bytecode Tampering**: Send malformed or oversized Zstandard wire frames, or tamper with `wasm_binary` bytes in transit.
+4. **Sandbox Escape & Unauthorized Host Access**: Attempt out-of-bounds linear memory reads/writes, filesystem tampering, or unauthorized socket connections from inside guest code.
 
 ---
 
@@ -21,31 +21,33 @@ In a decentralized P2P compute fabric, an adversary may attempt to:
 
 Wall-clock timeouts are non-deterministic and vulnerable to thread scheduling jitter. Nitro Compute enforces instruction-level metering directly inside the Wasmtime Cranelift compiler:
 
-- `NitroRuntime::new` enables `config.consume_fuel(true)`.
+- `NitroRuntime::with_config` enables `config.consume_fuel(true)`.
 - Every execution store is provisioned with a strict fuel quota via `store.add_fuel(fuel_limit)?`.
-- Each executed Wasm instruction decrements the store's fuel counter. When fuel reaches `0`, execution immediately traps with `wasmtime::Trap::OutOfFuel`.
-- `NitroRuntime::classify_execution_error` intercepts `Trap::OutOfFuel` across module instantiation, guest memory allocation, and `"map_line"` execution, aborting the task cleanly without crashing the worker daemon.
+- When fuel reaches `0`, execution immediately traps with `wasmtime::Trap::OutOfFuel`.
+- `NitroRuntime::classify_execution_error` converts this into `SandboxTrapError::OutOfFuel` and surfaces `TaskOutcome::SecurityTrap` to the Coordinator, halting further retries on poisoned tasks.
 
-### 2. Linear Memory Isolation and Guard Pages
+### 2. Linear Memory & Table ResourceLimiter (`core/src/runtime.rs`)
 
-- Wasmtime compiles guest modules using Cranelift (`OptLevel::Speed`) with hardware virtual memory guard pages, ensuring all guest memory accesses are strictly bounds-checked to the module's linear memory address space.
-- Host-to-guest chunk injection (`NitroRuntime::execute_map`) requests a dedicated heap region via the guest's exported `alloc` function (or grows linear memory pages at a non-zero offset), validates pointer bounds via `Memory::write`, and reclaims the buffer via `dealloc` after execution.
+- Each `Store<SandboxState>` attaches a custom `wasmtime::ResourceLimiter` (`SandboxLimiter`) configured with `max_memory_bytes` (default `64 MiB`) and `max_table_elements` (default `10,000`).
+- Any `memory.grow` or `table.grow` exceeding configured bounds returns an immediate trap error (`SandboxTrapError::MemoryLimitExceeded` / `SandboxTrapError::TableLimitExceeded`), blocking memory-bomb DoS attacks before host allocation occurs.
+- Wasmtime Cranelift (`OptLevel::Speed`) additionally enforces virtual memory guard pages and bounds-checked linear memory accesses (`Memory::write`, guest `alloc`/`dealloc`).
 
 ### 3. Capability-Based WASI Sandboxing
 
-- Each task runs in a fresh, isolated `Store<WasiP1Ctx>` created via `WasiCtxBuilder::new()`.
+- Each task runs in a fresh, isolated `Store<SandboxState>` with `WasiCtxBuilder::new()`.
 - No host directories are preopened (`preopened_dir` is never called), preventing guest modules from reading or modifying the host filesystem.
 
-### 4. Authenticated P2P Transport (`core/src/network.rs`)
+### 4. Wire Frame Integrity & Decompression-Bomb Protection (`core/src/network.rs`)
 
-- All peer-to-peer connections use **Noise Protocol** cryptographic handshakes over TCP with **Yamux** stream multiplexing.
-- Gossipsub messages on `"task-alloc"` and `"task-results"` require cryptographic signatures (`MessageAuthenticity::Signed(keypair)`) and are validated under `ValidationMode::Strict`.
+- **Encrypted Authenticated Transport**: All peer connections use **Noise Protocol** over TCP with **Yamux** stream multiplexing; Gossipsub messages require `MessageAuthenticity::Signed(keypair)` under `ValidationMode::Strict`.
+- **SHA-256 Artifact Verification**: `TaskPayload::verify_wasm_integrity()` verifies embedded `wasm_binary` bytes against `wasm_sha256` before compilation or caching.
+- **Bounded Zstd Decoding**: `decode_wire_frame` enforces a hard `MAX_WIRE_PAYLOAD_BYTES` (`16 MiB`) read cap using `std::io::Read::take`, defending against compressed payload expansion attacks.
 
 ---
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Nitro Compute (such as a sandbox escape, fuel metering bypass, or P2P deserialization flaw):
+If you discover a security vulnerability in Nitro Compute (such as a sandbox escape, fuel/memory limiter bypass, or P2P deserialization flaw):
 
 1. Do **not** open a public GitHub issue containing exploit details.
 2. Report the finding privately via GitHub Security Advisories on the [Nitro-Compute repository](https://github.com/AM4517UMOR4NG/Nitro-Compute/security) or contact the maintainer directly (`aekmohop@gmail.com`).
