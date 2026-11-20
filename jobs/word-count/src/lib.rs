@@ -1,4 +1,4 @@
-//! Word-count WebAssembly job library targeted for `wasm32-wasi`.
+//! Word-count WebAssembly job library targeted for `wasm32-wasip1`.
 
 use std::alloc::{alloc as std_alloc, dealloc as std_dealloc, Layout};
 use std::slice;
@@ -19,6 +19,7 @@ pub extern "C" fn alloc(len: usize) -> *mut u8 {
 
 /// Deallocates a block of `len` bytes previously allocated at `ptr`.
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn dealloc(ptr: *mut u8, len: usize) {
     if ptr.is_null() || len == 0 {
         return;
@@ -32,6 +33,7 @@ pub extern "C" fn dealloc(ptr: *mut u8, len: usize) {
 
 /// Reads the linear memory slice at `(ptr, len)` and returns the whitespace-delimited word count.
 #[no_mangle]
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn map_line(ptr: *const u8, len: usize) -> usize {
     if ptr.is_null() || len == 0 {
         return 0;
@@ -39,4 +41,27 @@ pub extern "C" fn map_line(ptr: *const u8, len: usize) -> usize {
     let bytes = unsafe { slice::from_raw_parts(ptr, len) };
     let line = str::from_utf8(bytes).unwrap_or("");
     line.split_whitespace().count()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn counts_words_across_whitespace_and_utf8() {
+        let sample = "nitro\tcompute   edge\nserverless wasm  ";
+        let ptr = alloc(sample.len());
+        assert!(!ptr.is_null());
+        unsafe {
+            std::ptr::copy_nonoverlapping(sample.as_ptr(), ptr, sample.len());
+        }
+        assert_eq!(map_line(ptr, sample.len()), 5);
+        dealloc(ptr, sample.len());
+    }
+
+    #[test]
+    fn handles_empty_and_null_inputs() {
+        assert_eq!(map_line(std::ptr::null(), 10), 0);
+        assert_eq!(map_line(b"hello".as_ptr(), 0), 0);
+    }
 }

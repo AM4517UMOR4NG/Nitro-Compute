@@ -5,6 +5,7 @@ members = [
     "coordinator",
     "worker",
     "jobs/word-count",
+    "jobs/pattern-match",
 ]
 
 [workspace.package]
