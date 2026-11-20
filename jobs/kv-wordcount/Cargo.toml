@@ -1,0 +1,12 @@
+[package]
+name = "kv-wordcount"
+version.workspace = true
+edition.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
+
+[dependencies]
+
+[target.wasm32-wasip1.dependencies]
