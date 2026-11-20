@@ -77,7 +77,8 @@ fn escape_json_str(input: &str, out: &mut String) {
     out.push('"');
 }
 
-fn serialize_counts_json(counts: &BTreeMap<String, usize>) -> String {
+/// Serializes sorted word-frequency entries into deterministic JSON.
+pub fn serialize_counts_json(counts: &BTreeMap<String, usize>) -> String {
     let mut out = String::from("{");
     for (idx, (word, count)) in counts.iter().enumerate() {
         if idx > 0 {
@@ -141,6 +142,32 @@ fn parse_flat_json_object(json_str: &str, counts: &mut BTreeMap<String, usize>) 
     }
 }
 
+/// Computes normalized lowercase word frequencies for an input text chunk.
+pub fn map_text_counts(text: &str) -> BTreeMap<String, usize> {
+    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+    for raw_token in text.split_whitespace() {
+        let token = raw_token
+            .trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
+            .to_ascii_lowercase();
+        if !token.is_empty() {
+            *counts.entry(token).or_insert(0) += 1;
+        }
+    }
+    counts
+}
+
+/// Merges newline-separated intermediate JSON frequency maps into a unified histogram.
+pub fn reduce_json_lines(text: &str) -> BTreeMap<String, usize> {
+    let mut merged: BTreeMap<String, usize> = BTreeMap::new();
+    for line in text.lines() {
+        let trimmed = line.trim();
+        if !trimmed.is_empty() {
+            parse_flat_json_object(trimmed, &mut merged);
+        }
+    }
+    merged
+}
+
 /// Scalar entrypoint: returns total whitespace-delimited word count.
 #[no_mangle]
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
@@ -153,15 +180,7 @@ pub extern "C" fn map_line(ptr: *const u8, len: usize) -> usize {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn map_bytes(ptr: *const u8, len: usize) -> i64 {
     let text = read_utf8_slice(ptr, len);
-    let mut counts: BTreeMap<String, usize> = BTreeMap::new();
-    for raw_token in text.split_whitespace() {
-        let token = raw_token
-            .trim_matches(|c: char| !c.is_alphanumeric() && c != '-' && c != '_')
-            .to_ascii_lowercase();
-        if !token.is_empty() {
-            *counts.entry(token).or_insert(0) += 1;
-        }
-    }
+    let counts = map_text_counts(text);
     let json = serialize_counts_json(&counts);
     pack_output_bytes(json.as_bytes())
 }
@@ -171,13 +190,7 @@ pub extern "C" fn map_bytes(ptr: *const u8, len: usize) -> i64 {
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 pub extern "C" fn reduce_bytes(ptr: *const u8, len: usize) -> i64 {
     let text = read_utf8_slice(ptr, len);
-    let mut merged: BTreeMap<String, usize> = BTreeMap::new();
-    for line in text.lines() {
-        let trimmed = line.trim();
-        if !trimmed.is_empty() {
-            parse_flat_json_object(trimmed, &mut merged);
-        }
-    }
+    let merged = reduce_json_lines(text);
     let json = serialize_counts_json(&merged);
     pack_output_bytes(json.as_bytes())
 }
@@ -186,35 +199,35 @@ pub extern "C" fn reduce_bytes(ptr: *const u8, len: usize) -> i64 {
 mod tests {
     use super::*;
 
-    fn unpack_and_read(packed: i64) -> String {
-        let u = packed as u64;
-        let ptr = ((u >> 32) & 0xFFFF_FFFF) as usize as *mut u8;
-        let len = (u & 0xFFFF_FFFF) as usize;
-        let bytes = unsafe { slice::from_raw_parts(ptr, len) };
-        let s = str::from_utf8(bytes).expect("valid utf8").to_string();
-        dealloc(ptr, len);
-        s
-    }
-
     #[test]
     fn map_and_reduce_merge_word_frequencies() {
         let c1 = "Nitro Compute edge, nitro wasm!";
         let c2 = "Edge compute: Rust + Wasm.";
 
-        let p1 = map_bytes(c1.as_ptr(), c1.len());
-        let p2 = map_bytes(c2.as_ptr(), c2.len());
-        let m1 = unpack_and_read(p1);
-        let m2 = unpack_and_read(p2);
+        let m1 = serialize_counts_json(&map_text_counts(c1));
+        let m2 = serialize_counts_json(&map_text_counts(c2));
 
         assert_eq!(m1, r#"{"compute":1,"edge":1,"nitro":2,"wasm":1}"#);
         assert_eq!(m2, r#"{"compute":1,"edge":1,"rust":1,"wasm":1}"#);
 
         let shuffled = format!("{m1}\n{m2}");
-        let pr = reduce_bytes(shuffled.as_ptr(), shuffled.len());
-        let reduced = unpack_and_read(pr);
+        let reduced = serialize_counts_json(&reduce_json_lines(&shuffled));
         assert_eq!(
             reduced,
             r#"{"compute":2,"edge":2,"nitro":2,"rust":1,"wasm":2}"#
         );
+    }
+
+    #[test]
+    fn escapes_quotes_and_preserves_scalar_word_count() {
+        let mut counts = BTreeMap::new();
+        counts.insert("a\"b\\c".to_string(), 3);
+        let json = serialize_counts_json(&counts);
+        assert_eq!(json, r#"{"a\"b\\c":3}"#);
+        let parsed = reduce_json_lines(&json);
+        assert_eq!(parsed.get("a\"b\\c"), Some(&3));
+
+        let sample = "one two three";
+        assert_eq!(map_line(sample.as_ptr(), sample.len()), 3);
     }
 }
