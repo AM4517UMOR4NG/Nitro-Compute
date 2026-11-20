@@ -191,7 +191,6 @@ enum TaskState {
         dispatched_at: Instant,
     },
     Completed {
-        worker_peer_id: String,
         computed_value: usize,
         fuel_consumed: u64,
         duration_us: u64,
@@ -335,7 +334,6 @@ impl JobScheduler {
                 self.tasks.insert(
                     result.task_id.clone(),
                     TaskState::Completed {
-                        worker_peer_id: result.worker_peer_id.clone(),
                         computed_value: result.computed_value,
                         fuel_consumed: result.fuel_consumed,
                         duration_us: result.duration_us,
@@ -489,7 +487,6 @@ impl JobScheduler {
                     fuel_consumed,
                     duration_us,
                     cache_hit,
-                    ..
                 } => {
                     completed += 1;
                     unified_sum = unified_sum.saturating_add(*computed_value);
