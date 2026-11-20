@@ -8,7 +8,10 @@ pub use network::{
     run_event_loop_with_handler, NitroBehavior, NitroBehaviorEvent, ResultPayload, TaskPayload,
     DEFAULT_FUEL_LIMIT, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
 };
-pub use runtime::NitroRuntime;
+pub use runtime::{
+    sha256_hex, ExecutionMetrics, NitroRuntime, SandboxConfig, SandboxTrapError,
+    DEFAULT_MAX_MEMORY_BYTES,
+};
 
 /// Initializes unified system-wide structured logging to terminal stdout via `tracing_subscriber`.
 pub fn init_logging() {
