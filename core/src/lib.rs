@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 //! Core library module for `nitro-compute`.
 
 pub mod network;
@@ -12,8 +13,9 @@ pub use network::{
     WORKER_TELEMETRY_TOPIC,
 };
 pub use runtime::{
-    sha256_hex, ExecutionMetrics, NitroRuntime, SandboxConfig, SandboxTrapError,
-    DEFAULT_MAX_MEMORY_BYTES,
+    sha256_hex, BytesExecutionMetrics, ExecutionMetrics, NitroRuntime, SandboxConfig,
+    SandboxTrapError, DEFAULT_EXECUTION_TIMEOUT_MS, DEFAULT_MAX_MEMORY_BYTES,
+    DEFAULT_MAX_OUTPUT_BYTES,
 };
 
 /// Initializes unified system-wide structured logging to terminal stdout via `tracing_subscriber`.
