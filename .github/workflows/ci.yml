@@ -11,7 +11,7 @@ env:
 
 jobs:
   check-and-build:
-    name: Build, Lint & Test Workspace
+    name: Build, Lint, Test & Benchmark Workspace
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -53,6 +53,8 @@ jobs:
         run: |
           cargo build --manifest-path jobs/word-count/Cargo.toml --target wasm32-wasip1 --release
           cargo build --manifest-path jobs/pattern-match/Cargo.toml --target wasm32-wasip1 --release
+          cargo build --manifest-path jobs/kv-wordcount/Cargo.toml --target wasm32-wasip1 --release
+          ls -lh target/wasm32-wasip1/release/*.wasm
 
       - name: Build workspace in release mode
         run: |
@@ -63,3 +65,6 @@ jobs:
             exit 1
           fi
           cat build.log
+
+      - name: Run sandbox latency & throughput benchmark
+        run: cargo run -p core --example bench_sandbox --release
