@@ -5,6 +5,18 @@ All notable changes to **Nitro Compute** are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-11-20
+
+### Added
+- **Compile-Time Memory Safety (`#![forbid(unsafe_code)]`)**: Enforced `#![forbid(unsafe_code)]` across all three host crates (`core`, `coordinator`, and `worker`).
+- **Preemptive Wall-Clock Epoch Interruption (`core::runtime`)**: Enabled `config.epoch_interruption(true)` with a managed `EpochTicker` background thread and `SandboxTrapError::EpochTimeout` (`--execution-timeout-ms`).
+- **Variable-Length Byte-Buffer ABI (`core::runtime`)**: Added `NitroRuntime::execute_bytes_with_options` supporting `(ptr, len) -> i64` packed `(out_ptr << 32) | out_len` returns bounded by `max_output_bytes` (`4 MiB` default).
+- **Prometheus / OpenMetrics Observability (`core::metrics`)**: Added a zero-dependency HTTP/1.1 server (`spawn_metrics_server`) and lock-free `NitroTelemetryRegistry` exposing `/metrics` and `/healthz` on `--metrics-addr`.
+- **End-to-End Ed25519 Payload Attestation & Persistent Identities (`core::network`)**: Added `load_or_generate_keypair` (`--identity-key`), `TaskPayload::sign`/`verify_signature` (`--trusted-coordinator`, `--require-signed-tasks`), and `ResultPayload::sign`/`verify_signature` (with anti-`PeerId`-spoofing checks).
+- **Two-Phase MapReduce Kernel (`jobs/kv-wordcount`)**: Added a zero-dependency `wasm32-wasip1` kernel exporting `map_bytes` and `reduce_bytes` for distributed JSON word-frequency aggregation (`--mode kv-mapreduce`).
+- **Speculative Straggler Execution & Artifact Deduplication (`coordinator`)**: Added Google MapReduce §3.6 backup task dispatch (`--speculative`) and SHA-256 bytecode deduplication (`--dedup-wasm`) with automatic cache-miss fallback.
+- **Empirical Latency & Throughput Benchmark (`core/examples/bench_sandbox.rs`)**: Added a reproducible release benchmark reporting cold-start vs SHA-256 warm-cache p50/p95/p99 latency, parallel throughput, trap latency, and Zstd compression ratios, executed automatically in CI.
+
 ## [0.2.0] - 2026-11-20
 
 ### Added
