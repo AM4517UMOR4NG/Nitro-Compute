@@ -4,9 +4,11 @@ pub mod network;
 pub mod runtime;
 
 pub use network::{
-    create_swarm, publish_result_payload, publish_task_payload, run_event_loop,
-    run_event_loop_with_handler, NitroBehavior, NitroBehaviorEvent, ResultPayload, TaskPayload,
-    DEFAULT_FUEL_LIMIT, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
+    create_swarm, decode_wire_frame, encode_wire_frame, publish_result_payload,
+    publish_task_payload, publish_worker_telemetry, run_event_loop, run_event_loop_with_handler,
+    NitroBehavior, NitroBehaviorEvent, ResultPayload, TaskOutcome, TaskPayload, WorkerTelemetry,
+    DEFAULT_FUEL_LIMIT, MAX_GOSSIPSUB_TRANSMIT_BYTES, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
+    WORKER_TELEMETRY_TOPIC,
 };
 pub use runtime::{
     sha256_hex, ExecutionMetrics, NitroRuntime, SandboxConfig, SandboxTrapError,
