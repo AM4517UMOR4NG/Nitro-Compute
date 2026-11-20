@@ -7,12 +7,12 @@ pub mod runtime;
 
 pub use metrics::{spawn_metrics_server, NitroTelemetryRegistry};
 pub use network::{
-    create_swarm, create_swarm_with_mdns, decode_wire_frame, encode_wire_frame,
-    process_swarm_maintenance, publish_result_payload, publish_task_payload,
-    publish_worker_telemetry, register_peer_address, run_event_loop, run_event_loop_with_handler,
-    NitroBehavior, NitroBehaviorEvent, ResultPayload, TaskOutcome, TaskPayload, WorkerTelemetry,
-    DEFAULT_FUEL_LIMIT, MAX_GOSSIPSUB_TRANSMIT_BYTES, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
-    WORKER_TELEMETRY_TOPIC,
+    create_swarm, create_swarm_with_config, create_swarm_with_mdns, decode_hex, decode_wire_frame,
+    encode_hex, encode_wire_frame, load_or_generate_keypair, process_swarm_maintenance,
+    publish_result_payload, publish_task_payload, publish_worker_telemetry, register_peer_address,
+    run_event_loop, run_event_loop_with_handler, JobPhase, NitroBehavior, NitroBehaviorEvent,
+    ResultPayload, TaskOutcome, TaskPayload, WorkerTelemetry, DEFAULT_FUEL_LIMIT,
+    MAX_GOSSIPSUB_TRANSMIT_BYTES, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC, WORKER_TELEMETRY_TOPIC,
 };
 pub use runtime::{
     sha256_hex, BytesExecutionMetrics, ExecutionMetrics, NitroRuntime, SandboxConfig,
