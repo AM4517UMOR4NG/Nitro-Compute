@@ -109,14 +109,15 @@ impl CoordinatorConfig {
                 }
                 "--mode" => {
                     if let Some(val) = args.next() {
-                        mode =
-                            match val.as_str() {
-                                "scalar" => CoordinatorMode::Scalar,
-                                "kv-mapreduce" | "mapreduce" | "kv" => CoordinatorMode::KvMapReduce,
-                                _ => return Err(anyhow!(
+                        mode = match val.as_str() {
+                            "scalar" => CoordinatorMode::Scalar,
+                            "kv-mapreduce" | "mapreduce" | "kv" => CoordinatorMode::KvMapReduce,
+                            _ => {
+                                return Err(anyhow!(
                                     "Invalid --mode '{val}'; expected 'scalar' or 'kv-mapreduce'"
-                                )),
-                            };
+                                ))
+                            }
+                        };
                     }
                 }
                 "--entry-fn" | "-e" => {
