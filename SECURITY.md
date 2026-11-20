@@ -1,6 +1,6 @@
 # Security Policy and Threat Model
 
-Nitro Compute is designed to execute untrusted, network-delivered compute workloads across decentralized peer-to-peer nodes. Security isolation is a core architectural requirement of the engine.
+Nitro Compute is designed to execute untrusted, network-delivered compute workloads across decentralized peer-to-peer nodes. Memory safety, cryptographic provenance, and deterministic resource isolation are core architectural invariants of the engine.
 
 ---
 
@@ -8,46 +8,49 @@ Nitro Compute is designed to execute untrusted, network-delivered compute worklo
 
 In a decentralized P2P compute fabric, an adversary may attempt to:
 
-1. **CPU Exhaustion (Infinite Loops)**: Broadcast a `TaskPayload` containing a WebAssembly module with an intentional infinite loop (`loop {}`) to exhaust worker CPU cores.
-2. **Memory / Table Exhaustion (OOM Bombs)**: Broadcast a WebAssembly module that declares oversized linear memories or invokes `memory.grow` / `table.grow` repeatedly to crash worker hosts.
-3. **Wire Decompression Bombs & Bytecode Tampering**: Send malformed or oversized Zstandard wire frames, or tamper with `wasm_binary` bytes in transit.
-4. **Sandbox Escape & Unauthorized Host Access**: Attempt out-of-bounds linear memory reads/writes, filesystem tampering, or unauthorized socket connections from inside guest code.
+1. **CPU Exhaustion (Infinite Loops & Slow Calls)**: Broadcast a `TaskPayload` containing a WebAssembly module with an infinite loop (`loop {}`) or long-running stall to exhaust worker CPU cores.
+2. **Memory / Table Exhaustion (OOM Bombs)**: Broadcast a WebAssembly module declaring oversized linear memories, calling `memory.grow` / `table.grow` repeatedly, or returning forged oversized output lengths (`out_len`).
+3. **Wire Decompression Bombs & Bytecode Tampering**: Send malformed or oversized Zstandard wire frames, tamper with `wasm_binary` bytes, or spoof another worker's `PeerId` in `ResultPayload`s.
+4. **Unauthorized Task Injection**: Publish rogue `TaskPayload`s onto `"task-alloc"` without Coordinator authorization.
+5. **Host Memory Corruption & Unauthorized OS Access**: Exploit host FFI memory bugs or access host files/sockets from inside guest code.
 
 ---
 
 ## Defense-in-Depth Controls
 
-### 1. Deterministic Instruction Fuel Metering (`core/src/runtime.rs`)
+### 1. Zero `unsafe` Host Code (`#![forbid(unsafe_code)]`)
 
-Wall-clock timeouts are non-deterministic and vulnerable to thread scheduling jitter. Nitro Compute enforces instruction-level metering directly inside the Wasmtime Cranelift compiler:
+- All three host crates (`core`/`nitro_core`, `coordinator`, and `worker`) compile under `#![forbid(unsafe_code)]`.
+- Only `wasm32-wasip1` guest kernels run inside Wasmtime's linear-memory sandbox, strictly isolated from host memory and OS calls.
 
-- `NitroRuntime::with_config` enables `config.consume_fuel(true)`.
-- Every execution store is provisioned with a strict fuel quota via `store.add_fuel(fuel_limit)?`.
-- When fuel reaches `0`, execution immediately traps with `wasmtime::Trap::OutOfFuel`.
-- `NitroRuntime::classify_execution_error` converts this into `SandboxTrapError::OutOfFuel` and surfaces `TaskOutcome::SecurityTrap` to the Coordinator, halting further retries on poisoned tasks.
+### 2. Dual-Layer CPU & Wall-Clock Execution Guards (`core/src/runtime.rs`)
 
-### 2. Linear Memory & Table ResourceLimiter (`core/src/runtime.rs`)
+- **Deterministic Instruction Fuel Metering**: `NitroRuntime::with_config` enables `config.consume_fuel(true)` and provisions each `Store` via `store.add_fuel(fuel_limit)?`. Exhausting fuel triggers `Trap::OutOfFuel` (`SandboxTrapError::OutOfFuel`).
+- **Preemptive Wall-Clock Epoch Interruption**: `NitroRuntime` enables `config.epoch_interruption(true)` with a background `EpochTicker` (`10 ms` default tick) and sets `store.epoch_deadline_trap()` + `store.set_epoch_deadline(ticks)`. Runaway modules exceeding `execution_timeout_ms` are preempted via `Trap::Interrupt` (`SandboxTrapError::EpochTimeout`).
 
-- Each `Store<SandboxState>` attaches a custom `wasmtime::ResourceLimiter` (`SandboxLimiter`) configured with `max_memory_bytes` (default `64 MiB`) and `max_table_elements` (default `10,000`).
-- Any `memory.grow` or `table.grow` exceeding configured bounds returns an immediate trap error (`SandboxTrapError::MemoryLimitExceeded` / `SandboxTrapError::TableLimitExceeded`), blocking memory-bomb DoS attacks before host allocation occurs.
-- Wasmtime Cranelift (`OptLevel::Speed`) additionally enforces virtual memory guard pages and bounds-checked linear memory accesses (`Memory::write`, guest `alloc`/`dealloc`).
+### 3. Linear Memory, Table & Output Bounds (`core/src/runtime.rs`)
 
-### 3. Capability-Based WASI Sandboxing
+- Every `Store<SandboxState>` attaches `SandboxLimiter` (`wasmtime::ResourceLimiter`) enforcing `max_memory_bytes` (`64 MiB` default) and `max_table_elements` (`10,000` default). Exceeding either triggers `SandboxTrapError::MemoryLimitExceeded` or `TableLimitExceeded`.
+- Variable-length byte returns (`execute_bytes_with_options`) enforce `out_len <= max_output_bytes` (`4 MiB` default) and use bounds-checked `Memory::read` before allocating host buffers.
+
+### 4. Capability-Based WASI Sandboxing
 
 - Each task runs in a fresh, isolated `Store<SandboxState>` with `WasiCtxBuilder::new()`.
 - No host directories are preopened (`preopened_dir` is never called), preventing guest modules from reading or modifying the host filesystem.
 
-### 4. Wire Frame Integrity & Decompression-Bomb Protection (`core/src/network.rs`)
+### 5. End-to-End Ed25519 Attestation & Bounded Wire Framing (`core/src/network.rs`)
 
-- **Encrypted Authenticated Transport**: All peer connections use **Noise Protocol** over TCP with **Yamux** stream multiplexing; Gossipsub messages require `MessageAuthenticity::Signed(keypair)` under `ValidationMode::Strict`.
-- **SHA-256 Artifact Verification**: `TaskPayload::verify_wasm_integrity()` verifies embedded `wasm_binary` bytes against `wasm_sha256` before compilation or caching.
-- **Bounded Zstd Decoding**: `decode_wire_frame` enforces a hard `MAX_WIRE_PAYLOAD_BYTES` (`16 MiB`) read cap using `std::io::Read::take`, defending against compressed payload expansion attacks.
+- **Encrypted P2P Transport**: Noise Protocol handshakes over TCP + Yamux multiplexing + signed Gossipsub (`ValidationMode::Strict`).
+- **Ed25519 Task & Result Attestation**:
+  - Coordinators sign `TaskPayload::canonical_signing_bytes()` (SHA-256 over task ID, phase, entrypoint, Wasm SHA-256, chunk SHA-256, fuel, limits, and attempt). Workers enforcing `--trusted-coordinator <HEX>` or `--require-signed-tasks` reject rogue or tampered tasks prior to Wasmtime instantiation (`TaskOutcome::SecurityTrap { kind: "InvalidSignature" }`).
+  - Workers sign `ResultPayload::canonical_signing_bytes()`; `ResultPayload::verify_signature` validates both the Ed25519 signature and that the signer public key derives `worker_peer_id` (blocking PeerId spoofing).
+- **SHA-256 Artifact Integrity & Bounded Zstd Decoding**: `verify_wasm_integrity()` verifies `wasm_binary` against `wasm_sha256`, and `decode_wire_frame` enforces a `16 MiB` read cap (`std::io::Read::take`) against Zstd decompression bombs.
 
 ---
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in Nitro Compute (such as a sandbox escape, fuel/memory limiter bypass, or P2P deserialization flaw):
+If you discover a security vulnerability in Nitro Compute (such as a sandbox escape, limiter bypass, signature forgery, or P2P deserialization flaw):
 
 1. Do **not** open a public GitHub issue containing exploit details.
 2. Report the finding privately via GitHub Security Advisories on the [Nitro-Compute repository](https://github.com/AM4517UMOR4NG/Nitro-Compute/security) or contact the maintainer directly (`aekmohop@gmail.com`).
