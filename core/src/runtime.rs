@@ -670,7 +670,8 @@ impl NitroRuntime {
                 )
             })?;
 
-        Self::reclaim_guest_allocation(&mut prep, prep.ptr_offset, prep.wasm_len);
+        let (in_ptr, in_len) = (prep.ptr_offset, prep.wasm_len);
+        Self::reclaim_guest_allocation(&mut prep, in_ptr, in_len);
 
         let remaining_fuel = prep.store.get_fuel().unwrap_or(0);
         let consumed_fuel = prep.fuel_limit.saturating_sub(remaining_fuel);
@@ -756,7 +757,8 @@ impl NitroRuntime {
                 )
             })?;
 
-        Self::reclaim_guest_allocation(&mut prep, prep.ptr_offset, prep.wasm_len);
+        let (in_ptr, in_len) = (prep.ptr_offset, prep.wasm_len);
+        Self::reclaim_guest_allocation(&mut prep, in_ptr, in_len);
 
         let packed_u64 = packed as u64;
         let out_ptr = ((packed_u64 >> 32) & 0xFFFF_FFFF) as usize;
