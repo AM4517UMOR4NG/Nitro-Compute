@@ -1,15 +1,22 @@
+#![forbid(unsafe_code)]
+
 use std::collections::HashMap;
+use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, RwLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{anyhow, Context};
 use libp2p::futures::StreamExt;
+use libp2p::identity::Keypair;
 use libp2p::{gossipsub, Multiaddr};
+use nitro_core::metrics::{spawn_metrics_server, NitroTelemetryRegistry};
 use nitro_core::network::{
-    create_swarm_with_mdns, process_swarm_maintenance, publish_result_payload,
-    publish_worker_telemetry, ResultPayload, TaskOutcome, TaskPayload, WorkerTelemetry,
-    TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC, WORKER_TELEMETRY_TOPIC,
+    create_swarm_with_config, decode_hex, encode_hex, load_or_generate_keypair,
+    process_swarm_maintenance, publish_result_payload, publish_worker_telemetry, JobPhase,
+    ResultPayload, TaskOutcome, TaskPayload, WorkerTelemetry, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
+    WORKER_TELEMETRY_TOPIC,
 };
 use nitro_core::runtime::{
     sha256_hex, NitroRuntime, SandboxConfig, SandboxTrapError, DEFAULT_MAX_MEMORY_BYTES,
@@ -21,6 +28,10 @@ use tracing::{error, info, warn};
 struct WorkerConfig {
     listen_addr: Multiaddr,
     bootstrap_peers: Vec<Multiaddr>,
+    identity_key_path: Option<PathBuf>,
+    trusted_coordinators: Vec<Vec<u8>>,
+    require_signed_tasks: bool,
+    metrics_addr: Option<SocketAddr>,
     max_concurrency: usize,
     max_memory_bytes: usize,
     telemetry_interval_secs: u64,
@@ -33,6 +44,11 @@ impl WorkerConfig {
             .parse()
             .context("Invalid default listen Multiaddr")?;
         let mut bootstrap_peers: Vec<Multiaddr> = Vec::new();
+        let mut identity_key_path: Option<PathBuf> = None;
+        let mut trusted_coordinators: Vec<Vec<u8>> = Vec::new();
+        let mut require_signed_tasks = false;
+        let mut metrics_addr: Option<SocketAddr> = None;
+
         let default_parallelism = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(2)
@@ -58,6 +74,30 @@ impl WorkerConfig {
                             .parse()
                             .with_context(|| format!("Invalid peer multiaddr: {peer_str}"))?;
                         bootstrap_peers.push(addr);
+                    }
+                }
+                "--identity-key" => {
+                    if let Some(val) = args.next() {
+                        identity_key_path = Some(PathBuf::from(val));
+                    }
+                }
+                "--trusted-coordinator" => {
+                    if let Some(hex_key) = args.next() {
+                        let pubkey_bytes = decode_hex(&hex_key)
+                            .context("Invalid --trusted-coordinator hex public key")?;
+                        trusted_coordinators.push(pubkey_bytes);
+                        require_signed_tasks = true;
+                    }
+                }
+                "--require-signed-tasks" => {
+                    require_signed_tasks = true;
+                }
+                "--metrics-addr" => {
+                    if let Some(val) = args.next() {
+                        let addr: SocketAddr = val
+                            .parse()
+                            .with_context(|| format!("Invalid --metrics-addr SocketAddr: {val}"))?;
+                        metrics_addr = Some(addr);
                     }
                 }
                 "--max-concurrency" | "-j" => {
@@ -99,6 +139,10 @@ impl WorkerConfig {
         Ok(Self {
             listen_addr,
             bootstrap_peers,
+            identity_key_path,
+            trusted_coordinators,
+            require_signed_tasks,
+            metrics_addr,
             max_concurrency,
             max_memory_bytes,
             telemetry_interval_secs,
@@ -109,31 +153,34 @@ impl WorkerConfig {
 
 /// RAII guard tracking active worker tasks across blocking execution and panics.
 struct ActiveTaskGuard {
-    metrics: Arc<WorkerMetrics>,
+    metrics: Arc<WorkerState>,
+    registry: Arc<NitroTelemetryRegistry>,
 }
 
 impl ActiveTaskGuard {
-    fn new(metrics: Arc<WorkerMetrics>) -> Self {
+    fn new(metrics: Arc<WorkerState>, registry: Arc<NitroTelemetryRegistry>) -> Self {
         metrics.active_tasks.fetch_add(1, Ordering::Relaxed);
-        Self { metrics }
+        registry.tasks_active.fetch_add(1, Ordering::Relaxed);
+        Self { metrics, registry }
     }
 }
 
 impl Drop for ActiveTaskGuard {
     fn drop(&mut self) {
         self.metrics.active_tasks.fetch_sub(1, Ordering::Relaxed);
+        self.registry.tasks_active.fetch_sub(1, Ordering::Relaxed);
     }
 }
 
-/// Shared worker execution metrics and content-addressed Wasm bytecode cache.
-struct WorkerMetrics {
+/// Shared worker execution counters and content-addressed Wasm bytecode cache.
+struct WorkerState {
     active_tasks: AtomicUsize,
     completed_tasks: AtomicU64,
     trapped_tasks: AtomicU64,
     artifact_cache: RwLock<HashMap<String, Vec<u8>>>,
 }
 
-impl WorkerMetrics {
+impl WorkerState {
     fn new() -> Self {
         Self {
             active_tasks: AtomicUsize::new(0),
@@ -178,16 +225,78 @@ impl WorkerMetrics {
     }
 }
 
+fn map_trap_error(
+    err: &anyhow::Error,
+    state: &WorkerState,
+    registry: &NitroTelemetryRegistry,
+) -> TaskOutcome {
+    match err.downcast_ref::<SandboxTrapError>() {
+        Some(SandboxTrapError::OutOfFuel { .. }) => {
+            state.trapped_tasks.fetch_add(1, Ordering::Relaxed);
+            registry
+                .tasks_trapped_out_of_fuel_total
+                .fetch_add(1, Ordering::Relaxed);
+            TaskOutcome::SecurityTrap {
+                kind: "OutOfFuel".to_string(),
+                reason: err.to_string(),
+            }
+        }
+        Some(SandboxTrapError::MemoryLimitExceeded { .. }) => {
+            state.trapped_tasks.fetch_add(1, Ordering::Relaxed);
+            registry
+                .tasks_trapped_memory_limit_total
+                .fetch_add(1, Ordering::Relaxed);
+            TaskOutcome::SecurityTrap {
+                kind: "MemoryLimitExceeded".to_string(),
+                reason: err.to_string(),
+            }
+        }
+        Some(SandboxTrapError::TableLimitExceeded { .. }) => {
+            state.trapped_tasks.fetch_add(1, Ordering::Relaxed);
+            registry
+                .tasks_trapped_table_limit_total
+                .fetch_add(1, Ordering::Relaxed);
+            TaskOutcome::SecurityTrap {
+                kind: "TableLimitExceeded".to_string(),
+                reason: err.to_string(),
+            }
+        }
+        Some(SandboxTrapError::EpochTimeout { .. }) => {
+            state.trapped_tasks.fetch_add(1, Ordering::Relaxed);
+            registry
+                .tasks_trapped_epoch_timeout_total
+                .fetch_add(1, Ordering::Relaxed);
+            TaskOutcome::SecurityTrap {
+                kind: "EpochTimeout".to_string(),
+                reason: err.to_string(),
+            }
+        }
+        None => {
+            registry
+                .tasks_execution_error_total
+                .fetch_add(1, Ordering::Relaxed);
+            TaskOutcome::ExecutionError {
+                reason: format!("{err:#}"),
+            }
+        }
+    }
+}
+
 fn execute_task_in_sandbox(
     runtime: &NitroRuntime,
-    metrics: &WorkerMetrics,
+    state: &WorkerState,
+    registry: &NitroTelemetryRegistry,
+    node_keypair: &Keypair,
     worker_peer_id: &str,
     task: TaskPayload,
 ) -> ResultPayload {
-    let wasm_bytes = match metrics.resolve_or_store_wasm(&task) {
+    let wasm_bytes = match state.resolve_or_store_wasm(&task) {
         Ok(bytes) => bytes,
         Err(err) => {
-            return ResultPayload::failure(
+            registry
+                .tasks_execution_error_total
+                .fetch_add(1, Ordering::Relaxed);
+            let mut fail = ResultPayload::failure(
                 task.task_id,
                 task.job_id,
                 worker_peer_id.to_string(),
@@ -196,63 +305,79 @@ fn execute_task_in_sandbox(
                     reason: format!("{err:#}"),
                 },
             );
+            let _ = fail.sign(node_keypair);
+            return fail;
         }
     };
 
-    match runtime.execute_with_options(
-        &wasm_bytes,
-        &task.data_chunk,
-        task.fuel,
-        task.max_memory_bytes,
-        &task.entry_fn,
-    ) {
-        Ok(exec) => {
-            metrics.completed_tasks.fetch_add(1, Ordering::Relaxed);
-            ResultPayload::from_metrics(
-                task.task_id,
-                task.job_id,
-                worker_peer_id.to_string(),
-                task.attempt,
-                &exec,
-            )
-        }
-        Err(err) => {
-            let status = match err.downcast_ref::<SandboxTrapError>() {
-                Some(SandboxTrapError::OutOfFuel { .. }) => {
-                    metrics.trapped_tasks.fetch_add(1, Ordering::Relaxed);
-                    TaskOutcome::SecurityTrap {
-                        kind: "OutOfFuel".to_string(),
-                        reason: err.to_string(),
-                    }
-                }
-                Some(SandboxTrapError::MemoryLimitExceeded { .. }) => {
-                    metrics.trapped_tasks.fetch_add(1, Ordering::Relaxed);
-                    TaskOutcome::SecurityTrap {
-                        kind: "MemoryLimitExceeded".to_string(),
-                        reason: err.to_string(),
-                    }
-                }
-                Some(SandboxTrapError::TableLimitExceeded { .. }) => {
-                    metrics.trapped_tasks.fetch_add(1, Ordering::Relaxed);
-                    TaskOutcome::SecurityTrap {
-                        kind: "TableLimitExceeded".to_string(),
-                        reason: err.to_string(),
-                    }
-                }
-                None => TaskOutcome::ExecutionError {
-                    reason: format!("{err:#}"),
-                },
-            };
+    let mut payload = match task.phase {
+        JobPhase::MapScalar => match runtime.execute_with_timeout(
+            &wasm_bytes,
+            &task.data_chunk,
+            task.fuel,
+            task.max_memory_bytes,
+            task.execution_timeout_ms,
+            &task.entry_fn,
+        ) {
+            Ok(exec) => {
+                state.completed_tasks.fetch_add(1, Ordering::Relaxed);
+                registry.record_execution(exec.fuel_consumed, exec.duration_us, exec.cache_hit);
+                ResultPayload::from_metrics(
+                    task.task_id,
+                    task.job_id,
+                    worker_peer_id.to_string(),
+                    task.attempt,
+                    &exec,
+                )
+            }
+            Err(err) => {
+                let status = map_trap_error(&err, state, registry);
+                ResultPayload::failure(
+                    task.task_id,
+                    task.job_id,
+                    worker_peer_id.to_string(),
+                    task.attempt,
+                    status,
+                )
+            }
+        },
+        JobPhase::MapBytes | JobPhase::ReduceBytes => match runtime.execute_bytes_with_options(
+            &wasm_bytes,
+            task.data_chunk.as_bytes(),
+            task.fuel,
+            task.max_memory_bytes,
+            task.execution_timeout_ms,
+            &task.entry_fn,
+        ) {
+            Ok(exec) => {
+                state.completed_tasks.fetch_add(1, Ordering::Relaxed);
+                registry.record_execution(exec.fuel_consumed, exec.duration_us, exec.cache_hit);
+                ResultPayload::from_bytes_metrics(
+                    task.task_id,
+                    task.job_id,
+                    worker_peer_id.to_string(),
+                    task.attempt,
+                    exec,
+                )
+            }
+            Err(err) => {
+                let status = map_trap_error(&err, state, registry);
+                ResultPayload::failure(
+                    task.task_id,
+                    task.job_id,
+                    worker_peer_id.to_string(),
+                    task.attempt,
+                    status,
+                )
+            }
+        },
+    };
 
-            ResultPayload::failure(
-                task.task_id,
-                task.job_id,
-                worker_peer_id.to_string(),
-                task.attempt,
-                status,
-            )
-        }
+    if let Err(err) = payload.sign(node_keypair) {
+        warn!(error = %format!("{err:#}"), "Failed signing ResultPayload");
     }
+
+    payload
 }
 
 #[tokio::main]
@@ -260,10 +385,15 @@ async fn main() -> anyhow::Result<()> {
     nitro_core::init_logging();
 
     let config = WorkerConfig::from_args()?;
+    let keypair = load_or_generate_keypair(config.identity_key_path.as_deref())?;
+    let worker_pubkey_hex = encode_hex(&keypair.public().encode_protobuf());
+
     info!(
         max_concurrency = config.max_concurrency,
         max_memory_mb = config.max_memory_bytes / (1024 * 1024),
         enable_mdns = config.enable_mdns,
+        require_signed_tasks = config.require_signed_tasks,
+        trusted_coordinators = config.trusted_coordinators.len(),
         "Starting nitro-compute worker daemon..."
     );
 
@@ -271,14 +401,25 @@ async fn main() -> anyhow::Result<()> {
         max_memory_bytes: config.max_memory_bytes,
         ..SandboxConfig::default()
     }));
-    let metrics = Arc::new(WorkerMetrics::new());
+    let state = Arc::new(WorkerState::new());
+    let registry = Arc::new(NitroTelemetryRegistry::new());
     let semaphore = Arc::new(Semaphore::new(config.max_concurrency));
 
-    let mut swarm = create_swarm_with_mdns(config.enable_mdns)
+    let mut swarm = create_swarm_with_config(keypair.clone(), config.enable_mdns)
         .await
         .context("Failed to initialize worker libp2p Swarm")?;
 
     let worker_peer_id = swarm.local_peer_id().to_string();
+
+    if let Some(metrics_addr) = config.metrics_addr {
+        let _ = spawn_metrics_server(
+            metrics_addr,
+            "worker",
+            worker_peer_id.clone(),
+            Arc::clone(&registry),
+        )
+        .await?;
+    }
 
     swarm
         .listen_on(config.listen_addr.clone())
@@ -293,10 +434,11 @@ async fn main() -> anyhow::Result<()> {
 
     info!(
         %worker_peer_id,
+        %worker_pubkey_hex,
         alloc_topic = TASK_ALLOC_TOPIC,
         results_topic = TASK_RESULTS_TOPIC,
         telemetry_topic = WORKER_TELEMETRY_TOPIC,
-        "Worker daemon ready with non-blocking Wasmtime pool"
+        "Worker daemon ready with non-blocking Wasmtime pool & Ed25519 attestation"
     );
 
     let alloc_topic_hash = gossipsub::IdentTopic::new(TASK_ALLOC_TOPIC).hash();
@@ -304,23 +446,27 @@ async fn main() -> anyhow::Result<()> {
     let mut telemetry_tick =
         tokio::time::interval(Duration::from_secs(config.telemetry_interval_secs));
     let started_at = Instant::now();
+    let trusted_allowlist = Arc::new(config.trusted_coordinators);
 
     loop {
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {
                 info!(
-                    completed = metrics.completed_tasks.load(Ordering::Relaxed),
-                    trapped = metrics.trapped_tasks.load(Ordering::Relaxed),
+                    completed = state.completed_tasks.load(Ordering::Relaxed),
+                    trapped = state.trapped_tasks.load(Ordering::Relaxed),
                     "Received shutdown signal; terminating worker daemon cleanly"
                 );
                 break;
             }
             _ = telemetry_tick.tick() => {
+                registry
+                    .connected_peers
+                    .store(swarm.connected_peers().count(), Ordering::Relaxed);
                 let heartbeat = WorkerTelemetry {
                     worker_peer_id: worker_peer_id.clone(),
-                    active_tasks: metrics.active_tasks.load(Ordering::Relaxed),
-                    completed_tasks: metrics.completed_tasks.load(Ordering::Relaxed),
-                    trapped_tasks: metrics.trapped_tasks.load(Ordering::Relaxed),
+                    active_tasks: state.active_tasks.load(Ordering::Relaxed),
+                    completed_tasks: state.completed_tasks.load(Ordering::Relaxed),
+                    trapped_tasks: state.trapped_tasks.load(Ordering::Relaxed),
                     cached_modules: runtime.cached_module_count(),
                     uptime_secs: started_at.elapsed().as_secs(),
                 };
@@ -336,12 +482,13 @@ async fn main() -> anyhow::Result<()> {
                             job_id = %result_payload.job_id,
                             status = ?result_payload.status,
                             computed_value = result_payload.computed_value,
+                            output_bytes = result_payload.output_bytes.len(),
                             fuel_consumed = result_payload.fuel_consumed,
                             duration_us = result_payload.duration_us,
                             cache_hit = result_payload.cache_hit,
                             message_id = ?maybe_msg_id,
                             topic = TASK_RESULTS_TOPIC,
-                            "Published ResultPayload back to coordinator mesh"
+                            "Published signed ResultPayload back to coordinator mesh"
                         );
                     }
                     Err(err) => {
@@ -360,37 +507,78 @@ async fn main() -> anyhow::Result<()> {
                     message,
                 }) = process_swarm_maintenance(&mut swarm, event)
                 {
+                    registry
+                        .connected_peers
+                        .store(swarm.connected_peers().count(), Ordering::Relaxed);
+
                     if message.topic == alloc_topic_hash
                         || message.topic.as_str() == TASK_ALLOC_TOPIC
                     {
                         match TaskPayload::from_bytes(&message.data) {
                             Ok(task) => {
+                                let allowlist_ref = if trusted_allowlist.is_empty() {
+                                    None
+                                } else {
+                                    Some(trusted_allowlist.as_slice())
+                                };
+
+                                if let Err(sig_err) = task.verify_signature(allowlist_ref, config.require_signed_tasks) {
+                                    registry.signature_failures_total.fetch_add(1, Ordering::Relaxed);
+                                    warn!(
+                                        task_id = %task.task_id,
+                                        %propagation_source,
+                                        error = %format!("{sig_err:#}"),
+                                        "Rejected TaskPayload due to Ed25519 signature verification failure"
+                                    );
+                                    let mut reject = ResultPayload::failure(
+                                        task.task_id,
+                                        task.job_id,
+                                        worker_peer_id.clone(),
+                                        task.attempt,
+                                        TaskOutcome::SecurityTrap {
+                                            kind: "InvalidSignature".to_string(),
+                                            reason: format!("{sig_err:#}"),
+                                        },
+                                    );
+                                    let _ = reject.sign(&keypair);
+                                    let _ = publish_result_payload(&mut swarm, &reject);
+                                    continue;
+                                }
+
                                 info!(
                                     task_id = %task.task_id,
                                     job_id = %task.job_id,
+                                    phase = ?task.phase,
+                                    entry_fn = %task.entry_fn,
                                     attempt = task.attempt,
                                     %propagation_source,
                                     %message_id,
                                     wasm_bytes = task.wasm_binary.len(),
                                     chunk_len = task.data_chunk.len(),
                                     fuel = task.fuel,
-                                    "Dispatching intercepted TaskPayload to non-blocking worker pool"
+                                    "Dispatching verified TaskPayload to non-blocking worker pool"
                                 );
 
                                 let sem = Arc::clone(&semaphore);
                                 let rt = Arc::clone(&runtime);
-                                let m = Arc::clone(&metrics);
+                                let st = Arc::clone(&state);
+                                let reg = Arc::clone(&registry);
                                 let tx = result_tx.clone();
+                                let kp = keypair.clone();
                                 let peer_id = worker_peer_id.clone();
 
                                 tokio::spawn(async move {
                                     let Ok(_permit) = sem.acquire_owned().await else {
                                         return;
                                     };
-                                    let _active_guard = ActiveTaskGuard::new(Arc::clone(&m));
-                                    let m_exec = Arc::clone(&m);
+                                    let _active_guard =
+                                        ActiveTaskGuard::new(Arc::clone(&st), Arc::clone(&reg));
+                                    let st_exec = Arc::clone(&st);
+                                    let reg_exec = Arc::clone(&reg);
                                     let result = tokio::task::spawn_blocking(move || {
-                                        execute_task_in_sandbox(&rt, &m_exec, &peer_id, task)
+                                        execute_task_in_sandbox(
+                                            &rt, &st_exec, &reg_exec, &kp, &peer_id, task,
+                                        )
                                     })
                                     .await;
                                     match result {
