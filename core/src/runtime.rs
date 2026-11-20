@@ -163,11 +163,11 @@ impl ResourceLimiter for SandboxLimiter {
 
     fn table_growing(
         &mut self,
-        _current: usize,
-        desired: usize,
-        _maximum: Option<usize>,
+        _current: u32,
+        desired: u32,
+        _maximum: Option<u32>,
     ) -> wasmtime::Result<bool> {
-        if desired > self.max_table_elements {
+        if (desired as usize) > self.max_table_elements {
             self.table_limit_exceeded = true;
             return Err(anyhow!(
                 "Table growth denied: requested {} elements > limit {} elements",

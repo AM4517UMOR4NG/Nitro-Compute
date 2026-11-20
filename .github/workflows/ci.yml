@@ -30,10 +30,24 @@ jobs:
         run: cargo fmt --all -- --check
 
       - name: Run Clippy lints
-        run: cargo clippy --workspace --all-targets -- -D warnings
+        run: |
+          if ! cargo clippy --workspace --all-targets -- -D warnings > clippy.log 2>&1; then
+            cat clippy.log
+            ERR_MSG=$(tail -n 30 clippy.log | tr '\r\n' '  ')
+            echo "::error::$ERR_MSG"
+            exit 1
+          fi
+          cat clippy.log
 
       - name: Run workspace unit & P2P integration tests
-        run: cargo test --workspace
+        run: |
+          if ! cargo test --workspace > test.log 2>&1; then
+            cat test.log
+            ERR_MSG=$(tail -n 30 test.log | tr '\r\n' '  ')
+            echo "::error::$ERR_MSG"
+            exit 1
+          fi
+          cat test.log
 
       - name: Build wasm32-wasip1 job kernels
         run: |
