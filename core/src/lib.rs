@@ -1,9 +1,11 @@
 #![forbid(unsafe_code)]
 //! Core library module for `nitro-compute`.
 
+pub mod metrics;
 pub mod network;
 pub mod runtime;
 
+pub use metrics::{spawn_metrics_server, NitroTelemetryRegistry};
 pub use network::{
     create_swarm, create_swarm_with_mdns, decode_wire_frame, encode_wire_frame,
     process_swarm_maintenance, publish_result_payload, publish_task_payload,
