@@ -387,19 +387,17 @@ pub async fn create_swarm_with_mdns(enable_mdns: bool) -> anyhow::Result<Swarm<N
                 .max_transmit_size(MAX_GOSSIPSUB_TRANSMIT_BYTES)
                 .message_id_fn(message_id_fn)
                 .build()
-                .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                .map_err(std::io::Error::other)?;
 
             let mut gossipsub = gossipsub::Behaviour::new(
                 gossipsub::MessageAuthenticity::Signed(keypair.clone()),
                 gossipsub_config,
             )
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+            .map_err(std::io::Error::other)?;
 
             for topic_name in [TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC, WORKER_TELEMETRY_TOPIC] {
                 let topic = gossipsub::IdentTopic::new(topic_name);
-                gossipsub
-                    .subscribe(&topic)
-                    .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+                gossipsub.subscribe(&topic).map_err(std::io::Error::other)?;
             }
 
             let local_public_key = keypair.public();

@@ -425,7 +425,7 @@ impl NitroRuntime {
                 (ptr, true)
             } else {
                 const WASM_PAGE_SIZE: usize = 65_536;
-                let pages_needed = (input_len.max(1) + WASM_PAGE_SIZE - 1) / WASM_PAGE_SIZE;
+                let pages_needed = input_len.max(1).div_ceil(WASM_PAGE_SIZE);
                 let prev_pages = memory
                     .grow(&mut store, pages_needed as u64)
                     .map_err(|err| {
@@ -434,9 +434,8 @@ impl NitroRuntime {
                 let base_offset = (prev_pages as usize) * WASM_PAGE_SIZE;
                 let safe_offset = if base_offset == 0 { 1024 } else { base_offset };
                 if safe_offset + input_len > memory.data_size(&store) {
-                    let extra_pages =
-                        ((safe_offset + input_len - memory.data_size(&store)) + WASM_PAGE_SIZE - 1)
-                            / WASM_PAGE_SIZE;
+                    let extra_pages = (safe_offset + input_len - memory.data_size(&store))
+                        .div_ceil(WASM_PAGE_SIZE);
                     memory.grow(&mut store, extra_pages as u64).map_err(|err| {
                         Self::classify_execution_error(err, &store, fuel_limit, "memory_grow")
                     })?;

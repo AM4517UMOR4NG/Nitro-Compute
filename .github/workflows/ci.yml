@@ -11,16 +11,17 @@ env:
 
 jobs:
   check-and-build:
-    name: Build & Verify Workspace
+    name: Build, Lint & Test Workspace
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Rust stable toolchain
+      - name: Install Rust stable toolchain & wasm32-wasip1 target
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
+          targets: wasm32-wasip1
 
       - name: Cache Cargo registry and target directory
         uses: Swatinem/rust-cache@v2
@@ -28,11 +29,22 @@ jobs:
       - name: Check formatting
         run: cargo fmt --all -- --check
 
+      - name: Run Clippy lints
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Run workspace unit & P2P integration tests
+        run: cargo test --workspace
+
+      - name: Build wasm32-wasip1 job kernels
+        run: |
+          cargo build --manifest-path jobs/word-count/Cargo.toml --target wasm32-wasip1 --release
+          cargo build --manifest-path jobs/pattern-match/Cargo.toml --target wasm32-wasip1 --release
+
       - name: Build workspace in release mode
         run: |
           if ! cargo build --release > build.log 2>&1; then
             cat build.log
-             ERR_MSG=$(tail -n 30 build.log | tr '\r\n' '  ')
+            ERR_MSG=$(tail -n 30 build.log | tr '\r\n' '  ')
             echo "::error::$ERR_MSG"
             exit 1
           fi
