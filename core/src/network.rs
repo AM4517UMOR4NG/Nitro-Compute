@@ -5,9 +5,12 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, Context};
 use libp2p::futures::StreamExt;
+use libp2p::swarm::behaviour::toggle::Toggle;
 #[allow(unused_imports)]
 use libp2p::swarm::{NetworkBehaviour, NetworkBehaviour as NetworkBehavior, SwarmEvent};
-use libp2p::{gossipsub, noise, tcp, yamux, Swarm, SwarmBuilder};
+use libp2p::{
+    gossipsub, identify, mdns, noise, ping, tcp, yamux, Multiaddr, PeerId, Swarm, SwarmBuilder,
+};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, info, warn};
 
@@ -335,16 +338,25 @@ impl WorkerTelemetry {
     }
 }
 
-/// Custom P2P network behavior combining Kademlia DHT routing and Gossipsub broadcasting.
+/// Custom P2P network behavior combining Kademlia DHT routing, Gossipsub pub/sub,
+/// optional LAN mDNS discovery, Identify peer metadata exchange, and Ping RTT probing.
 #[derive(NetworkBehavior)]
 pub struct NitroBehavior {
     pub kademlia: kademlia::Kademlia<kademlia::MemoryStore>,
     pub gossipsub: gossipsub::Behaviour,
+    pub mdns: Toggle<mdns::tokio::Behaviour>,
+    pub identify: identify::Behaviour,
+    pub ping: ping::Behaviour,
 }
 
 /// Builds and configures a `libp2p::Swarm<NitroBehavior>` over TCP with Noise encryption and Yamux multiplexing,
-/// subscribed to `"task-alloc"`, `"task-results"`, and `"worker-telemetry"` Gossipsub channels.
+/// enabling LAN mDNS auto-discovery when supported by the host network interface.
 pub async fn create_swarm() -> anyhow::Result<Swarm<NitroBehavior>> {
+    create_swarm_with_mdns(true).await
+}
+
+/// Builds and configures a `libp2p::Swarm<NitroBehavior>` with configurable LAN mDNS auto-discovery.
+pub async fn create_swarm_with_mdns(enable_mdns: bool) -> anyhow::Result<Swarm<NitroBehavior>> {
     let swarm = SwarmBuilder::with_new_identity()
         .with_tokio()
         .with_tcp(
@@ -390,13 +402,35 @@ pub async fn create_swarm() -> anyhow::Result<Swarm<NitroBehavior>> {
                     .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
             }
 
-            let peer_id = keypair.public().to_peer_id();
+            let local_public_key = keypair.public();
+            let peer_id = local_public_key.to_peer_id();
             let store = kademlia::MemoryStore::new(peer_id);
             let kademlia = kademlia::Kademlia::new(peer_id, store);
+
+            let mdns_behaviour = if enable_mdns {
+                match mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id) {
+                    Ok(behaviour) => Some(behaviour),
+                    Err(err) => {
+                        warn!(error = %err, "Failed to bind mDNS multicast socket; continuing without LAN mDNS discovery");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
+
+            let identify = identify::Behaviour::new(identify::Config::new(
+                "/nitro-compute/id/1.0.0".to_string(),
+                local_public_key,
+            ));
+            let ping = ping::Behaviour::default();
 
             Ok(NitroBehavior {
                 kademlia,
                 gossipsub,
+                mdns: Toggle::from(mdns_behaviour),
+                identify,
+                ping,
             })
         })
         .map_err(|e| anyhow!("Failed to initialize NitroBehavior in SwarmBuilder: {e}"))?
@@ -405,14 +439,103 @@ pub async fn create_swarm() -> anyhow::Result<Swarm<NitroBehavior>> {
 
     info!(
         local_peer_id = %swarm.local_peer_id(),
+        mdns_enabled = swarm.behaviour().mdns.is_enabled(),
         alloc_topic = TASK_ALLOC_TOPIC,
         results_topic = TASK_RESULTS_TOPIC,
         telemetry_topic = WORKER_TELEMETRY_TOPIC,
         max_transmit_bytes = MAX_GOSSIPSUB_TRANSMIT_BYTES,
-        "Initialized libp2p Swarm subscribed to bidirectional Gossipsub topics"
+        "Initialized libp2p Swarm (TCP + Noise + Yamux + Kademlia + Gossipsub + mDNS + Identify + Ping)"
     );
 
     Ok(swarm)
+}
+
+/// Registers a peer and its reachable address in both Gossipsub and Kademlia routing tables.
+pub fn register_peer_address(swarm: &mut Swarm<NitroBehavior>, peer_id: &PeerId, addr: Multiaddr) {
+    swarm.behaviour_mut().gossipsub.add_explicit_peer(peer_id);
+    swarm.behaviour_mut().kademlia.add_address(peer_id, addr);
+}
+
+/// Handles transport, mDNS, Identify, Ping, and Kademlia swarm maintenance events uniformly,
+/// returning `Some(gossipsub::Event)` when a Gossipsub event requires higher-level handling.
+pub fn process_swarm_maintenance(
+    swarm: &mut Swarm<NitroBehavior>,
+    event: SwarmEvent<NitroBehaviorEvent>,
+) -> Option<gossipsub::Event> {
+    match event {
+        SwarmEvent::NewListenAddr { address, .. } => {
+            info!(%address, "Swarm listening on local multiaddr");
+            None
+        }
+        SwarmEvent::ConnectionEstablished {
+            peer_id, endpoint, ..
+        } => {
+            info!(%peer_id, ?endpoint, "Established encrypted P2P connection with peer");
+            register_peer_address(swarm, &peer_id, endpoint.get_remote_address().clone());
+            None
+        }
+        SwarmEvent::ConnectionClosed { peer_id, cause, .. } => {
+            debug!(%peer_id, ?cause, "Closed P2P connection with peer");
+            None
+        }
+        SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
+            warn!(?peer_id, %error, "Outgoing P2P connection error");
+            None
+        }
+        SwarmEvent::IncomingConnectionError { error, .. } => {
+            warn!(%error, "Incoming P2P connection error");
+            None
+        }
+        SwarmEvent::Behaviour(NitroBehaviorEvent::Gossipsub(gs_event)) => Some(gs_event),
+        SwarmEvent::Behaviour(NitroBehaviorEvent::Mdns(mdns::Event::Discovered(peers))) => {
+            for (peer_id, addr) in peers {
+                if peer_id == *swarm.local_peer_id() {
+                    continue;
+                }
+                info!(%peer_id, %addr, "mDNS discovered local Nitro Compute peer");
+                register_peer_address(swarm, &peer_id, addr.clone());
+                if !swarm.is_connected(&peer_id) {
+                    if let Err(err) = swarm.dial(addr) {
+                        debug!(%peer_id, error = %err, "Skipping immediate mDNS dial");
+                    }
+                }
+            }
+            None
+        }
+        SwarmEvent::Behaviour(NitroBehaviorEvent::Mdns(mdns::Event::Expired(peers))) => {
+            for (peer_id, addr) in peers {
+                debug!(%peer_id, %addr, "mDNS peer announcement expired");
+            }
+            None
+        }
+        SwarmEvent::Behaviour(NitroBehaviorEvent::Identify(identify::Event::Received {
+            peer_id,
+            info,
+        })) => {
+            debug!(
+                %peer_id,
+                agent_version = %info.agent_version,
+                listen_addrs = ?info.listen_addrs,
+                "Identified remote P2P node"
+            );
+            for addr in info.listen_addrs {
+                register_peer_address(swarm, &peer_id, addr);
+            }
+            None
+        }
+        SwarmEvent::Behaviour(NitroBehaviorEvent::Ping(ping::Event { peer, result, .. })) => {
+            match result {
+                Ok(rtt) => debug!(%peer, rtt_ms = rtt.as_secs_f64() * 1000.0, "Peer Ping RTT"),
+                Err(err) => debug!(%peer, error = %err, "Peer Ping check failed"),
+            }
+            None
+        }
+        SwarmEvent::Behaviour(NitroBehaviorEvent::Kademlia(kad_event)) => {
+            debug!(?kad_event, "Received Kademlia DHT event");
+            None
+        }
+        _ => None,
+    }
 }
 
 /// Publishes a serialized `TaskPayload` onto the `"task-alloc"` Gossipsub topic.
@@ -502,58 +625,31 @@ where
     loop {
         tokio::select! {
             event = swarm.select_next_some() => {
-                match event {
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        info!(%address, "Swarm listening on local multiaddr");
-                    }
-                    SwarmEvent::Behaviour(NitroBehaviorEvent::Gossipsub(
-                        gossipsub::Event::Message {
-                            propagation_source,
-                            message_id,
-                            message,
-                        },
-                    )) => {
-                        if message.topic == task_alloc_topic_hash
-                            || message.topic.as_str() == TASK_ALLOC_TOPIC
-                        {
-                            info!(
-                                %propagation_source,
-                                %message_id,
-                                payload_bytes = message.data.len(),
+                if let Some(gossipsub::Event::Message {
+                    propagation_source,
+                    message_id,
+                    message,
+                }) = process_swarm_maintenance(swarm, event)
+                {
+                    if message.topic == task_alloc_topic_hash
+                        || message.topic.as_str() == TASK_ALLOC_TOPIC
+                    {
+                        info!(
+                            %propagation_source,
+                            %message_id,
+                            payload_bytes = message.data.len(),
+                            topic = TASK_ALLOC_TOPIC,
+                            "Intercepted Gossipsub task allocation message"
+                        );
+                        let payload: Vec<u8> = message.data;
+                        if let Err(err) = on_task_alloc(swarm, payload) {
+                            warn!(
                                 topic = TASK_ALLOC_TOPIC,
-                                "Intercepted Gossipsub task allocation message"
+                                error = %format!("{:#}", err),
+                                "Failed to process intercepted task payload"
                             );
-                            let payload: Vec<u8> = message.data;
-                            if let Err(err) = on_task_alloc(swarm, payload) {
-                                warn!(
-                                    topic = TASK_ALLOC_TOPIC,
-                                    error = %format!("{:#}", err),
-                                    "Failed to process intercepted task payload"
-                                );
-                            }
                         }
                     }
-                    SwarmEvent::Behaviour(NitroBehaviorEvent::Kademlia(kad_event)) => {
-                        debug!(?kad_event, "Received Kademlia DHT event");
-                    }
-                    SwarmEvent::ConnectionEstablished { peer_id, endpoint, .. } => {
-                        info!(%peer_id, ?endpoint, "Established P2P connection with peer");
-                        swarm
-                            .behaviour_mut()
-                            .gossipsub
-                            .add_explicit_peer(&peer_id);
-                        swarm
-                            .behaviour_mut()
-                            .kademlia
-                            .add_address(&peer_id, endpoint.get_remote_address().clone());
-                    }
-                    SwarmEvent::OutgoingConnectionError { peer_id, error, .. } => {
-                        warn!(?peer_id, %error, "Outgoing P2P connection error");
-                    }
-                    SwarmEvent::IncomingConnectionError { error, .. } => {
-                        warn!(%error, "Incoming P2P connection error");
-                    }
-                    _ => {}
                 }
             }
         }

@@ -4,8 +4,9 @@ pub mod network;
 pub mod runtime;
 
 pub use network::{
-    create_swarm, decode_wire_frame, encode_wire_frame, publish_result_payload,
-    publish_task_payload, publish_worker_telemetry, run_event_loop, run_event_loop_with_handler,
+    create_swarm, create_swarm_with_mdns, decode_wire_frame, encode_wire_frame,
+    process_swarm_maintenance, publish_result_payload, publish_task_payload,
+    publish_worker_telemetry, register_peer_address, run_event_loop, run_event_loop_with_handler,
     NitroBehavior, NitroBehaviorEvent, ResultPayload, TaskOutcome, TaskPayload, WorkerTelemetry,
     DEFAULT_FUEL_LIMIT, MAX_GOSSIPSUB_TRANSMIT_BYTES, TASK_ALLOC_TOPIC, TASK_RESULTS_TOPIC,
     WORKER_TELEMETRY_TOPIC,
